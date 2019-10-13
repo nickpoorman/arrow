@@ -27,6 +27,7 @@ import numpy as np
 import os
 import re
 import six
+import operator
 
 import pyarrow as pa
 import pyarrow.lib as lib
@@ -115,7 +116,7 @@ class ParquetFile(object):
     ----------
     source : str, pathlib.Path, pyarrow.NativeFile, or file-like object
         Readable source. For passing bytes or buffer-like file containing a
-        Parquet file, use pyarorw.BufferReader
+        Parquet file, use pyarrow.BufferReader
     metadata : FileMetaData, default None
         Use existing metadata object, rather than reading from file.
     common_metadata : FileMetaData, default None
@@ -142,15 +143,17 @@ class ParquetFile(object):
 
         result = defaultdict(list)
 
-        def _visit_piece(i, key, rest):
-            result[key].append(i)
-
-            if len(rest) > 0:
-                nested_key = '.'.join((key, rest[0]))
-                _visit_piece(i, nested_key, rest[1:])
-
         for i, path in enumerate(paths):
-            _visit_piece(i, path[0], path[1:])
+            key = path[0]
+            rest = path[1:]
+            while True:
+                result[key].append(i)
+
+                if not rest:
+                    break
+
+                key = '.'.join((key, rest[0]))
+                rest = rest[1:]
 
         return result
 
@@ -371,7 +374,15 @@ flavor : {'spark'}, default None
     various target systems
 filesystem : FileSystem, default None
     If nothing passed, will be inferred from `where` if path-like, else
-    `where` is already a file-like object so no filesystem is needed."""
+    `where` is already a file-like object so no filesystem is needed.
+compression_level: int or dict, default None
+    Specify the compression level for a codec, either on a general basis or
+    per-column. If None is passed, arrow selects the compression level for
+    the compression codec in use. The compression level has a different
+    meaning for each codec, so you have to read the documentation of the
+    codec you are using.
+    An exception is thrown if the compression codec does not allow specifying
+    a compression level."""
 
 
 class ParquetWriter(object):
@@ -397,7 +408,9 @@ schema : arrow Schema
                  use_dictionary=True,
                  compression='snappy',
                  write_statistics=True,
-                 use_deprecated_int96_timestamps=None, **options):
+                 use_deprecated_int96_timestamps=None,
+                 compression_level=None,
+                 **options):
         if use_deprecated_int96_timestamps is None:
             # Use int96 timestamps for Spark
             if flavor is not None and 'spark' in flavor:
@@ -431,6 +444,7 @@ schema : arrow Schema
             use_dictionary=use_dictionary,
             write_statistics=write_statistics,
             use_deprecated_int96_timestamps=use_deprecated_int96_timestamps,
+            compression_level=compression_level,
             **options)
         self.is_open = True
 
@@ -911,6 +925,11 @@ def _path_split(path, sep):
 EXCLUDED_PARQUET_PATHS = {'_SUCCESS'}
 
 
+class _ParquetDatasetMetadata:
+    __slots__ = ('fs', 'memory_map', 'read_dictionary', 'common_metadata',
+                 'buffer_size')
+
+
 def _open_dataset_file(dataset, path, meta=None):
     if dataset.fs is not None and not isinstance(dataset.fs, LocalFileSystem):
         path = dataset.fs.open(path, mode='rb')
@@ -988,32 +1007,37 @@ metadata_nthreads: int, default 1
                  metadata=None, split_row_groups=False, validate_schema=True,
                  filters=None, metadata_nthreads=1, read_dictionary=None,
                  memory_map=False, buffer_size=0):
+        self._metadata = _ParquetDatasetMetadata()
         a_path = path_or_paths
         if isinstance(a_path, list):
             a_path = a_path[0]
 
-        self.fs, _ = _get_filesystem_and_path(filesystem, a_path)
+        self._metadata.fs, _ = _get_filesystem_and_path(filesystem, a_path)
         if isinstance(path_or_paths, list):
             self.paths = [_parse_uri(path) for path in path_or_paths]
         else:
             self.paths = _parse_uri(path_or_paths)
 
-        self.read_dictionary = read_dictionary
-        self.memory_map = memory_map
-        self.buffer_size = buffer_size
+        self._metadata.read_dictionary = read_dictionary
+        self._metadata.memory_map = memory_map
+        self._metadata.buffer_size = buffer_size
 
         (self.pieces,
          self.partitions,
          self.common_metadata_path,
          self.metadata_path) = _make_manifest(
              path_or_paths, self.fs, metadata_nthreads=metadata_nthreads,
-             open_file_func=partial(_open_dataset_file, self))
+             open_file_func=partial(_open_dataset_file, self._metadata)
+        )
 
         if self.common_metadata_path is not None:
             with self.fs.open(self.common_metadata_path) as f:
-                self.common_metadata = read_metadata(f, memory_map=memory_map)
+                self._metadata.common_metadata = read_metadata(
+                    f,
+                    memory_map=memory_map
+                )
         else:
-            self.common_metadata = None
+            self._metadata.common_metadata = None
 
         if metadata is None and self.metadata_path is not None:
             with self.fs.open(self.metadata_path) as f:
@@ -1160,6 +1184,16 @@ metadata_nthreads: int, default 1
 
         self.pieces = [p for p in self.pieces if all_filters_accept(p)]
 
+    fs = property(operator.attrgetter('_metadata.fs'))
+    memory_map = property(operator.attrgetter('_metadata.memory_map'))
+    read_dictionary = property(
+        operator.attrgetter('_metadata.read_dictionary')
+    )
+    common_metadata = property(
+        operator.attrgetter('_metadata.common_metadata')
+    )
+    buffer_size = property(operator.attrgetter('_metadata.buffer_size'))
+
 
 def _make_manifest(path_or_paths, fs, pathsep='/', metadata_nthreads=1,
                    open_file_func=None):
@@ -1287,7 +1321,9 @@ def write_table(table, where, row_group_size=None, version='1.0',
                 coerce_timestamps=None,
                 allow_truncated_timestamps=False,
                 data_page_size=None, flavor=None,
-                filesystem=None, **kwargs):
+                filesystem=None,
+                compression_level=None,
+                **kwargs):
     row_group_size = kwargs.pop('chunk_size', row_group_size)
     use_int96 = use_deprecated_int96_timestamps
     try:
@@ -1303,6 +1339,7 @@ def write_table(table, where, row_group_size=None, version='1.0',
                 allow_truncated_timestamps=allow_truncated_timestamps,
                 compression=compression,
                 use_deprecated_int96_timestamps=use_int96,
+                compression_level=compression_level,
                 **kwargs) as writer:
             writer.write_table(table, row_group_size=row_group_size)
     except Exception:

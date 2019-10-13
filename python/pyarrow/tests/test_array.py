@@ -152,15 +152,15 @@ def test_to_pandas_zero_copy():
     arr = pa.array(range(10))
 
     for i in range(10):
-        np_arr = arr.to_pandas()
-        assert sys.getrefcount(np_arr) == 2
-        np_arr = None  # noqa
+        series = arr.to_pandas()
+        assert sys.getrefcount(series) == 2
+        series = None  # noqa
 
     assert sys.getrefcount(arr) == 2
 
     for i in range(10):
         arr = pa.array(range(10))
-        np_arr = arr.to_pandas()
+        series = arr.to_pandas()
         arr = None
         gc.collect()
 
@@ -168,9 +168,9 @@ def test_to_pandas_zero_copy():
 
         # Because of py.test's assert inspection magic, if you put getrefcount
         # on the line being examined, it will be 1 higher than you expect
-        base_refcount = sys.getrefcount(np_arr.base)
+        base_refcount = sys.getrefcount(series.values.base)
         assert base_refcount == 2
-        np_arr.sum()
+        series.sum()
 
 
 @pytest.mark.nopandas
@@ -300,7 +300,11 @@ def test_struct_array_slice():
 
 
 def test_array_factory_invalid_type():
-    arr = np.array([datetime.timedelta(1), datetime.timedelta(2)])
+
+    class MyObject:
+        pass
+
+    arr = np.array([MyObject()])
     with pytest.raises(ValueError):
         pa.array(arr)
 
@@ -422,7 +426,7 @@ def test_struct_from_buffers():
 
 
 def test_struct_from_arrays():
-    a = pa.array([4, 5, 6])
+    a = pa.array([4, 5, 6], type=pa.int64())
     b = pa.array(["bar", None, ""])
     c = pa.array([[1, 2], None, [3, None]])
     expected_list = [
@@ -447,7 +451,7 @@ def test_struct_from_arrays():
     # From fields
     fa = pa.field("a", a.type, nullable=False)
     fb = pa.field("b", b.type)
-    fc = pa.field("c", b.type)
+    fc = pa.field("c", c.type)
     arr = pa.StructArray.from_arrays([a, b, c], fields=[fa, fb, fc])
     assert arr.type == pa.struct([fa, fb, fc])
     assert not arr.type[0].nullable
@@ -459,6 +463,11 @@ def test_struct_from_arrays():
     arr = pa.StructArray.from_arrays([], fields=[])
     assert arr.type == pa.struct([])
     assert arr.to_pylist() == []
+
+    # Inconsistent fields
+    fa2 = pa.field("a", pa.int32())
+    with pytest.raises(ValueError, match="int64 vs int32"):
+        pa.StructArray.from_arrays([a, b, c], fields=[fa2, fb, fc])
 
 
 def test_dictionary_from_numpy():
@@ -818,6 +827,7 @@ def test_cast_from_null():
         pa.timestamp('us'),
         pa.timestamp('us', tz='UTC'),
         pa.timestamp('us', tz='Europe/Paris'),
+        pa.duration('us'),
         pa.struct([pa.field('a', pa.int32()),
                    pa.field('b', pa.list_(pa.int8())),
                    pa.field('c', pa.string())]),
@@ -836,6 +846,22 @@ def test_cast_from_null():
     for out_type in out_types:
         with pytest.raises(NotImplementedError):
             in_arr.cast(out_type)
+
+
+def test_cast_string_to_number_roundtrip():
+    cases = [
+        (pa.array([u"1", u"127", u"-128"]),
+         pa.array([1, 127, -128], type=pa.int8())),
+        (pa.array([None, u"18446744073709551615"]),
+         pa.array([None, 18446744073709551615], type=pa.uint64())),
+    ]
+    for in_arr, expected in cases:
+        casted = in_arr.cast(expected.type, safe=True)
+        casted.validate()
+        assert casted.equals(expected)
+        casted_back = casted.cast(in_arr.type, safe=True)
+        casted_back.validate()
+        assert casted_back.equals(in_arr)
 
 
 def test_view():
@@ -919,6 +945,15 @@ def test_cast_date32_to_int():
 
     assert result1.equals(expected1)
     assert result2.equals(arr)
+
+
+def test_cast_duration_to_int():
+    arr = pa.array(np.array([0, 1, 2], dtype='int64'),
+                   type=pa.duration('us'))
+    expected = pa.array([0, 1, 2], type='i8')
+
+    result = arr.cast('i8')
+    assert result.equals(expected)
 
 
 def test_cast_binary_to_utf8():
@@ -1144,6 +1179,7 @@ def test_pandas_null_sentinels_raise_error():
         ([0, np.nan], pa.time32('s')),
         ([0, np.nan], pa.time64('us')),
         ([0, np.nan], pa.timestamp('us')),
+        ([0, np.nan], pa.duration('us')),
     ]
     for case, ty in cases:
         # Both types of exceptions are raised. May want to clean that up
@@ -1222,6 +1258,49 @@ def test_array_from_timestamp_with_generic_unit():
     with pytest.raises(pa.ArrowNotImplementedError,
                        match='Unbound or generic datetime64 time unit'):
         pa.array([n, x, y])
+
+
+@pytest.mark.parametrize(('dtype', 'type'), [
+    ('timedelta64[s]', pa.duration('s')),
+    ('timedelta64[ms]', pa.duration('ms')),
+    ('timedelta64[us]', pa.duration('us')),
+    ('timedelta64[ns]', pa.duration('ns'))
+])
+def test_array_from_numpy_timedelta(dtype, type):
+    data = [
+        None,
+        datetime.timedelta(1),
+        datetime.timedelta(0, 1)
+    ]
+
+    # from numpy array
+    np_arr = np.array(data, dtype=dtype)
+    arr = pa.array(np_arr)
+    assert isinstance(arr, pa.DurationArray)
+    assert arr.type == type
+    expected = pa.array(data, type=type)
+    assert arr.equals(expected)
+    assert arr.to_pylist() == data
+
+    # from list of numpy scalars
+    arr = pa.array(list(np.array(data, dtype=dtype)))
+    assert arr.equals(expected)
+    assert arr.to_pylist() == data
+
+
+def test_array_from_numpy_timedelta_incorrect_unit():
+    # generic (no unit)
+    td = np.timedelta64(1)
+
+    for data in [[td], np.array([td])]:
+        with pytest.raises(NotImplementedError):
+            pa.array(data)
+
+    # unsupported unit
+    td = np.timedelta64(1, 'M')
+    for data in [[td], np.array([td])]:
+        with pytest.raises(NotImplementedError):
+            pa.array(data)
 
 
 def test_array_from_numpy_ascii():
@@ -1784,5 +1863,8 @@ def test_concat_array_different_types():
 def test_to_pandas_timezone():
     # https://issues.apache.org/jira/browse/ARROW-6652
     arr = pa.array([1, 2, 3], type=pa.timestamp('s', tz='Europe/Brussels'))
+    s = arr.to_pandas()
+    assert s.dt.tz is not None
+    arr = pa.chunked_array([arr])
     s = arr.to_pandas()
     assert s.dt.tz is not None

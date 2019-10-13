@@ -41,7 +41,6 @@ Building requires:
   sufficient. For Windows, at least Visual Studio 2015 is required.
 * CMake 3.2 or higher
 * On Linux and macOS, either ``make`` or ``ninja`` build utilities
-* Boost 1.58 or higher, though some unit tests require 1.64 or newer.
 
 On Ubuntu/Debian you can install the requirements with:
 
@@ -49,10 +48,7 @@ On Ubuntu/Debian you can install the requirements with:
 
    sudo apt-get install \
         build-essential \
-        cmake \
-        libboost-filesystem-dev \
-        libboost-regex-dev \
-        libboost-system-dev
+        cmake
 
 On Alpine Linux:
 
@@ -60,7 +56,6 @@ On Alpine Linux:
 
    apk add autoconf \
            bash \
-           boost-dev \
            cmake \
            g++ \
            gcc \
@@ -85,7 +80,6 @@ On MSYS2:
      mingw-w64-${MSYSTEM_CARCH}-brotli \
      mingw-w64-${MSYSTEM_CARCH}-cmake \
      mingw-w64-${MSYSTEM_CARCH}-double-conversion \
-     mingw-w64-${MSYSTEM_CARCH}-flatbuffers \
      mingw-w64-${MSYSTEM_CARCH}-gcc \
      mingw-w64-${MSYSTEM_CARCH}-gflags \
      mingw-w64-${MSYSTEM_CARCH}-glog \
@@ -179,12 +173,18 @@ boolean flags to ``cmake``.
   building pyarrow). This library must be built against the same Python version
   for which you are building pyarrow, e.g. Python 2.7 or Python 3.6. NumPy must
   also be installed.
+* ``-DARROW_WITH_BZ2=ON``: Build support for BZ2 compression
+* ``-DARROW_WITH_ZLIB=ON``: Build suport for zlib (gzip) compression
+* ``-DARROW_WITH_LZ4=ON``: Build suport for lz4 compression
+* ``-DARROW_WITH_SNAPPY=ON``: Build suport for Snappy compression
+* ``-DARROW_WITH_ZSTD=ON``: Build suport for ZSTD compression
+* ``-DARROW_WITH_BROTLI=ON``: Build suport for Brotli compression
 
 Some features of the core Arrow shared library can be switched off for improved
 build times if they are not required for your application:
 
 * ``-DARROW_COMPUTE=ON``: build the in-memory analytics module
-* ``-DARROW_IPC=ON``: build the IPC extensions (requiring Flatbuffers)
+* ``-DARROW_IPC=ON``: build the IPC extensions
 
 CMake version requirements
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -221,7 +221,6 @@ The build system supports a number of third-party dependencies
   * ``GTEST``: Googletest, for testing
   * ``benchmark``: Google benchmark, for testing
   * ``RapidJSON``: for data serialization
-  * ``Flatbuffers``: for data serialization
   * ``ZLIB``: for data compression
   * ``BZip2``: for data compression
   * ``LZ4``: for data compression

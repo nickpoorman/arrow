@@ -18,7 +18,7 @@
 cmake_minimum_required(VERSION 3.2)
 message(STATUS "Building using CMake version: ${CMAKE_VERSION}")
 
-set(ARROW_VERSION "0.15.0-SNAPSHOT")
+set(ARROW_VERSION "1.0.0-SNAPSHOT")
 
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" ARROW_BASE_VERSION "${ARROW_VERSION}")
 
@@ -211,6 +211,14 @@ if(${CLANG_FORMAT_FOUND})
                     ${ARROW_LINT_QUIET})
 endif()
 
+add_custom_target(lint_cpp_cli ${PYTHON_EXECUTABLE} ${BUILD_SUPPORT_DIR}/lint_cpp_cli.py
+                  ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+if(ARROW_LINT_ONLY)
+  message("ARROW_LINT_ONLY was specified, this is only a partial build directory")
+  return()
+endif()
+
 #
 # "make clang-tidy" and "make check-clang-tidy" targets
 #
@@ -247,9 +255,9 @@ if(${CLANG_TIDY_FOUND})
                     ${ARROW_LINT_QUIET})
 endif()
 
-if(ARROW_ONLY_LINT)
-  return()
-endif()
+if(UNIX)
+  add_custom_target(iwyu ${BUILD_SUPPORT_DIR}/iwyu/iwyu.sh)
+endif(UNIX)
 
 #
 # Set up various options
@@ -268,8 +276,12 @@ if(ARROW_BUILD_TESTS OR ARROW_BUILD_INTEGRATION)
   set(ARROW_JSON ON)
 endif()
 
-if(ARROW_FLIGHT OR ARROW_PARQUET OR ARROW_BUILD_TESTS)
+if(ARROW_CUDA OR ARROW_FLIGHT OR ARROW_PARQUET OR ARROW_BUILD_TESTS)
   set(ARROW_IPC ON)
+endif()
+
+if(ARROW_DATASET)
+  set(ARROW_FILESYSTEM ON)
 endif()
 
 if(MSVC)
@@ -444,6 +456,9 @@ message(STATUS "CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/src)
 include_directories(src)
 
+# Compiled flatbuffers files
+include_directories(src/generated)
+
 #
 # Visibility
 #
@@ -573,13 +588,6 @@ if(${INFER_FOUND})
 endif()
 
 #
-# "make iwyu" target
-#
-if(UNIX)
-  add_custom_target(iwyu ${BUILD_SUPPORT_DIR}/iwyu/iwyu.sh)
-endif(UNIX)
-
-#
 # Linker and Dependencies
 #
 
@@ -669,12 +677,19 @@ if(ARROW_STATIC_LINK_LIBS)
   add_dependencies(arrow_dependencies ${ARROW_STATIC_LINK_LIBS})
 endif()
 
-set(ARROW_SHARED_PRIVATE_LINK_LIBS ${ARROW_STATIC_LINK_LIBS} ${BOOST_FILESYSTEM_LIBRARY}
-                                   ${BOOST_SYSTEM_LIBRARY})
+set(ARROW_SHARED_PRIVATE_LINK_LIBS ${ARROW_STATIC_LINK_LIBS})
 
-list(APPEND ARROW_STATIC_LINK_LIBS ${BOOST_FILESYSTEM_LIBRARY} ${BOOST_SYSTEM_LIBRARY})
+# Is boost::filesystem needed?
+if(ARROW_BUILD_INTEGRATION OR ARROW_BUILD_TESTS OR ARROW_FILESYSTEM OR ARROW_HDFS)
+  set(ARROW_WITH_BOOST_FILESYSTEM ON)
 
-list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS boost_filesystem boost_system boost_regex)
+  list(APPEND ARROW_SHARED_PRIVATE_LINK_LIBS ${BOOST_FILESYSTEM_LIBRARY}
+              ${BOOST_SYSTEM_LIBRARY})
+
+  list(APPEND ARROW_STATIC_LINK_LIBS ${BOOST_FILESYSTEM_LIBRARY} ${BOOST_SYSTEM_LIBRARY})
+
+  list(APPEND ARROW_STATIC_INSTALL_INTERFACE_LIBS boost_filesystem boost_system)
+endif()
 
 if(NOT MSVC)
   list(APPEND ARROW_LINK_LIBS ${CMAKE_DL_LIBS})

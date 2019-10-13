@@ -462,6 +462,7 @@ public class UnionVector implements FieldVector {
 
     @Override
     public void splitAndTransfer(int startIndex, int length) {
+      Preconditions.checkArgument(startIndex + length <= valueCount);
       to.clear();
       internalStructVectorTransferPair.splitAndTransfer(startIndex, length);
       final int startPoint = startIndex * TYPE_WIDTH;
@@ -689,5 +690,10 @@ public class UnionVector implements FieldVector {
     @Override
     public <OUT, IN> OUT accept(VectorVisitor<OUT, IN> visitor, IN value) {
       return visitor.visit(this, value);
+    }
+
+    @Override
+    public String getName() {
+      return name;
     }
 }

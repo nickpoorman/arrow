@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-context("test-type")
+context("File system")
 
 test_that("LocalFilesystem", {
   fs <- LocalFileSystem$create()
@@ -28,7 +28,9 @@ test_that("LocalFilesystem", {
   info <- file.info(DESCRIPTION)
 
   expect_equal(stat$size, info$size)
-  expect_equal(stat$mtime, info$mtime)
+  # This fails due to a subsecond difference on Appveyor on Windows with R 3.3 only
+  # So add a greater tolerance to allow for that
+  expect_equal(stat$mtime, info$mtime, tolerance = 1)
 
   tf <- tempfile(fileext = ".txt")
   fs$CopyFile(DESCRIPTION, tf)
@@ -83,7 +85,6 @@ test_that("SubTreeFilesystem", {
   expect_is(st_fs, "FileSystem")
   st_fs$CreateDir("test")
   st_fs$CopyFile("DESCRIPTION", "DESC.txt")
-  skip_on_os("windows") # See ARROW-6622
   stats <- st_fs$GetTargetStats(c("DESCRIPTION", "test", "nope", "DESC.txt"))
   expect_equal(stats[[1L]]$type, FileType$File)
   expect_equal(stats[[2L]]$type, FileType$Directory)

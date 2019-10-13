@@ -22,25 +22,22 @@
 # docker run --rm -t -i -v $PWD:/io -v $ARROW_ROOT:/arrow  arrow_cpp_minimal /io/build.sh
 
 BUILD_DIR=/build
+NPROC=$(nproc)
 
 mkdir $BUILD_DIR
 pushd $BUILD_DIR
 
-cmake /arrow/cpp -DBOOST_SOURCE=BUNDLED \
-      -DARROW_BOOST_USE_SHARED=OFF \
+cmake /arrow/cpp \
       -DARROW_COMPUTE=OFF \
       -DARROW_DATASET=OFF \
+      -DARROW_FILESYSTEM=OFF \
+      -DARROW_HDFS=OFF \
       -DARROW_JEMALLOC=OFF \
       -DARROW_JSON=OFF \
       -DARROW_USE_GLOG=OFF \
-      -DARROW_WITH_BZ2=OFF \
-      -DARROW_WITH_ZLIB=OFF \
-      -DARROW_WITH_ZSTD=OFF \
-      -DARROW_WITH_LZ4=OFF \
-      -DARROW_WITH_SNAPPY=OFF \
-      -DARROW_WITH_BROTLI=OFF \
       -DARROW_BUILD_UTILITIES=OFF
 
-make -j8
+make -j$NPROC
+make install
 
 popd

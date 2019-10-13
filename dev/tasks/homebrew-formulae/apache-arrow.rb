@@ -1,11 +1,12 @@
 class ApacheArrow < Formula
   desc "Columnar in-memory analytics layer designed to accelerate big data"
   homepage "https://arrow.apache.org/"
-  url "https://www.apache.org/dyn/closer.cgi?path=arrow/arrow-0.15.0-SNAPSHOT/apache-arrow-0.15.0-SNAPSHOT.tar.gz"
+  url "https://www.apache.org/dyn/closer.cgi?path=arrow/arrow-1.0.0-SNAPSHOT/apache-arrow-1.0.0-SNAPSHOT.tar.gz"
   sha256 "9948ddb6d4798b51552d0dca3252dd6e3a7d0f9702714fc6f5a1b59397ce1d28"
   head "https://github.com/apache/arrow.git"
 
   depends_on "cmake" => :build
+  depends_on "aws-sdk-cpp"
   depends_on "boost"
   depends_on "brotli"
   depends_on "double-conversion"
@@ -31,6 +32,13 @@ class ApacheArrow < Formula
       -DARROW_PLASMA=ON
       -DARROW_PROTOBUF_USE_SHARED=ON
       -DARROW_PYTHON=ON
+      -DARROW_S3=ON
+      -DARROW_WITH_BZ2=ON
+      -DARROW_WITH_ZLIB=ON
+      -DARROW_WITH_ZSTD=ON
+      -DARROW_WITH_LZ4=ON
+      -DARROW_WITH_SNAPPY=ON
+      -DARROW_WITH_BROTLI=ON
       -DARROW_INSTALL_NAME_RPATH=OFF
       -DPYTHON_EXECUTABLE=#{Formula["python"].bin/"python3"}
     ]

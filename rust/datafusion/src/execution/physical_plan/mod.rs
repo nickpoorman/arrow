@@ -65,18 +65,22 @@ pub trait AggregateExpr: Send + Sync {
     fn name(&self) -> String;
     /// Get the data type of this expression, given the schema of the input
     fn data_type(&self, input_schema: &Schema) -> Result<DataType>;
+    /// Evaluate the expressioon being aggregated
+    fn evaluate_input(&self, batch: &RecordBatch) -> Result<ArrayRef>;
     /// Create an accumulator for this aggregate expression
     fn create_accumulator(&self) -> Rc<RefCell<dyn Accumulator>>;
     /// Create an aggregate expression for combining the results of accumulators from partitions.
     /// For example, to combine the results of a parallel SUM we just need to do another SUM, but
     /// to combine the results of parallel COUNT we would also use SUM.
-    fn create_combiner(&self, column_index: usize) -> Arc<dyn AggregateExpr>;
+    fn create_reducer(&self, column_index: usize) -> Arc<dyn AggregateExpr>;
 }
 
 /// Aggregate accumulator
 pub trait Accumulator {
     /// Update the accumulator based on a row in a batch
-    fn accumulate(&mut self, batch: &RecordBatch, row_index: usize) -> Result<()>;
+    fn accumulate_scalar(&mut self, value: Option<ScalarValue>) -> Result<()>;
+    /// Update the accumulator based on an array in a batch
+    fn accumulate_batch(&mut self, array: &ArrayRef) -> Result<()>;
     /// Get the final value for the accumulator
     fn get_value(&self) -> Result<Option<ScalarValue>>;
 }
@@ -86,5 +90,7 @@ pub mod csv;
 pub mod datasource;
 pub mod expressions;
 pub mod hash_aggregate;
+pub mod limit;
 pub mod merge;
 pub mod projection;
+pub mod selection;

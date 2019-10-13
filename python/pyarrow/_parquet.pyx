@@ -568,7 +568,7 @@ cdef class FileMetaData:
     def __reduce__(self):
         cdef:
             NativeFile sink = BufferOutputStream()
-            OutputStream* c_sink = sink.get_output_stream().get()
+            COutputStream* c_sink = sink.get_output_stream().get()
         with nogil:
             self._metadata.WriteTo(c_sink)
 
@@ -694,7 +694,7 @@ cdef class FileMetaData:
         Write the metadata object to a metadata-only file
         """
         cdef:
-            shared_ptr[OutputStream] sink
+            shared_ptr[COutputStream] sink
             c_string c_where
 
         try:
@@ -1010,7 +1010,7 @@ cdef class ParquetReader:
              read_dictionary=None, FileMetaData metadata=None,
              int buffer_size=0):
         cdef:
-            shared_ptr[RandomAccessFile] rd_handle
+            shared_ptr[CRandomAccessFile] rd_handle
             shared_ptr[CFileMetaData] c_metadata
             CReaderProperties properties = default_reader_properties()
             ArrowReaderProperties arrow_props = (
@@ -1202,7 +1202,7 @@ cdef class ParquetReader:
 cdef class ParquetWriter:
     cdef:
         unique_ptr[FileWriter] writer
-        shared_ptr[OutputStream] sink
+        shared_ptr[COutputStream] sink
         bint own_sink
 
     cdef readonly:
@@ -1211,6 +1211,7 @@ cdef class ParquetWriter:
         object coerce_timestamps
         object allow_truncated_timestamps
         object compression
+        object compression_level
         object version
         object write_statistics
         int row_group_size
@@ -1223,7 +1224,8 @@ cdef class ParquetWriter:
                   use_deprecated_int96_timestamps=False,
                   coerce_timestamps=None,
                   data_page_size=None,
-                  allow_truncated_timestamps=False):
+                  allow_truncated_timestamps=False,
+                  compression_level=None):
         cdef:
             shared_ptr[WriterProperties] properties
             c_string c_where
@@ -1243,6 +1245,7 @@ cdef class ParquetWriter:
 
         self.use_dictionary = use_dictionary
         self.compression = compression
+        self.compression_level = compression_level
         self.version = version
         self.write_statistics = write_statistics
         self.use_deprecated_int96_timestamps = use_deprecated_int96_timestamps
@@ -1319,6 +1322,12 @@ cdef class ParquetWriter:
             for column, codec in self.compression.iteritems():
                 check_compression_name(codec)
                 props.compression(column, compression_from_name(codec))
+
+        if isinstance(self.compression_level, int):
+            props.compression_level(self.compression_level)
+        elif self.compression_level is not None:
+            for column, level in self.compression_level.iteritems():
+                props.compression_level(column, level)
 
     cdef void _set_dictionary_props(self, WriterProperties.Builder* props):
         if isinstance(self.use_dictionary, bool):
