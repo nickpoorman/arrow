@@ -330,6 +330,8 @@ func NewInt64DictEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64
 
 		dtype: Int64Type,
 		sink:  array.NewInt64BufferBuilder(pool),
+
+		memoTable: utilext.NewScalarMemoTable(),
 	}, nil
 }
 
@@ -356,7 +358,7 @@ func (e *Int64DictEncoder) PutBuffer(buffer interface{}, numValues int) error {
 				e.PutValue(v[i])
 			}
 		default:
-			fmt.Errorf(
+			return fmt.Errorf(
 				"PutBuffer: direct put to %s from %T not supported",
 				arrow.INT64.String(),
 				buffer,
@@ -374,9 +376,11 @@ func (e *Int64DictEncoder) PutBuffer(buffer interface{}, numValues int) error {
 // 	return nil
 // }
 
+// TODO: This should really be the native type for speed....
+// func (e *Int64DictEncoder) PutValue(v int64) error {
 //+ Specialization required here for: FLBAType, ByteArrayType, Int96Type
 //+ func (e *{{.DType}}DictEncoder) PutValue(v interface{}) error {
-func (e *Int64DictEncoder) PutValue(v interface{}) error {
+func (e *Int64DictEncoder) PutValue(v int64) error {
 	// Put() implementation for primitive types
 	onFound := func(memoIndex int32) {}
 	onNotFound := func(memoIndex int32) {
@@ -881,8 +885,8 @@ func NewEncoder(
 
 	if useDictionary {
 		switch typeNum {
-		// case Type_INT64:
-		// 	return NewEncoderInt64(encoding, useDictionary, descr, pool), nil
+		case Type_INT64:
+			return NewInt64DictEncoder(descr, pool)
 		default:
 			return nil, fmt.Errorf(
 				"dict encoder for %s not implemented: %w",
