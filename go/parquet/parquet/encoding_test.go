@@ -1,6 +1,7 @@
 package parquet
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -173,7 +174,7 @@ func (t *testPlainEncodingInt64) CheckRoundtrip() {
 
 	// decode the []bytes back to []int64
 	decoder.SetData(t.numValues, t.encodeBuffer.Bytes(), t.encodeBuffer.Len())
-	valuesDecoded, err := decoder.DecodeBuffer(t.decodeBuf, t.numValues)
+	valuesDecoded, err := decoder.Decode(t.decodeBuf, t.numValues)
 	testutil.AssertNil(t.t, err)
 	testutil.AssertEqInt(t.t, t.numValues, valuesDecoded)
 }
@@ -268,19 +269,27 @@ func (t *testDictionaryEncodingInt64) CheckRoundtrip() {
 	decoder.SetDict(dictDecoder)
 
 	decoder.SetData(t.numValues, indicies.Bytes(), indicies.Len())
-	valuesDecoded := decoder.Decode(t.decodeBuf, t.numValues)
+	valuesDecoded, err := decoder.Decode(t.decodeBuf, t.numValues)
+	testutil.AssertNil(t.t, err)
 	testutil.AssertEqInt(t.t, valuesDecoded, t.numValues)
 
 	// TODO: The DictionaryDecoder must stay alive because the decoded
 	// values' data is owned by a buffer inside the DictionaryEncoder. We
 	// should revisit when data lifetime is reviewed more generally.
-	testutil.AssertNil(t.t, VerifyResults(t.t, t.decodeBuf, t.draws, t.numValues))
+	VerifyResults(t.t, t.decodeBuf.([]int64), t.draws.([]int64), t.numValues)
 
 	// Also test spaced decoding
-	decoder.SetData(t.numValues, indicies, len(indicies))
-	valuesDecoded := decoder.DecodeSpaced(t.decodeBuf, t.numValues, 0, validBits, 0)
+	decoder.SetData(t.numValues, indicies.Bytes(), indicies.Len())
+	valuesDecoded, err = decoder.DecodeSpaced(t.decodeBuf, t.numValues, 0, validBits, 0)
+	testutil.AssertNil(t.t, err)
 	testutil.AssertEqInt(t.t, t.numValues, valuesDecoded)
-	testutil.AssertNil(t.t, VerifyResults(t.t, t.decodeBuf, t.draws, t.numValues))
+	VerifyResults(t.t, t.decodeBuf.([]int64), t.draws.([]int64), t.numValues)
+}
+
+func VerifyResults(t *testing.T, result []int64, expected []int64, numValues int) {
+	for i := 0; i < numValues; i++ {
+		testutil.AssertDeepEqM(t, result[i], expected[i], fmt.Sprintf("%d", i))
+	}
 }
 
 func TestDictionaryEncoding_BasicRoundTrip(t *testing.T) {
