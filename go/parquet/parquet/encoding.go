@@ -9,7 +9,6 @@ import (
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 	"github.com/nickpoorman/arrow-parquet-go/internal/util"
-	arrayext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/array"
 	utilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util"
 	bitutilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util/bitutil"
 )
@@ -45,8 +44,8 @@ type Encoder interface {
 
 type PlainEncoder interface {
 	// TypedEncoder
-	PutBuffer(buffer interface{}, numValues int) error
-	PutSpaced(src interface{}, numValues int, validBits []byte, validBitsOffset int) error
+	Put(src interface{}, numValues int) error
+	PutSpaced(src interface{}, validBits []byte, validBitsOffset int) error
 
 	EstimatedDataEncodedSize() int
 	FlushValues() *memory.Buffer
@@ -56,8 +55,8 @@ type PlainEncoder interface {
 // TODO: Fix comment below after verify
 // TypedEncoder can be a PlainEncoder or a DictEncoder?
 type TypedEncoder interface {
-	PutBuffer(buffer interface{}, numValues int) error
-	PutSpaced(src interface{}, numValues int, validBits []byte, validBitsOffset int) error
+	Put(src interface{}, numValues int) error
+	PutSpaced(src interface{}, validBits []byte, validBitsOffset int) error
 
 	EstimatedDataEncodedSize() int
 	FlushValues() *memory.Buffer
@@ -196,6 +195,21 @@ func (e *Int64PlainEncoder) EstimatedDataEncodedSize() int { return e.sink.Len()
 
 func (e *Int64PlainEncoder) FlushValues() *memory.Buffer { return e.sink.Finish() }
 
+func (e *Int64PlainEncoder) Put(src interface{}, numValues int) error {
+	switch v := src.(type) {
+	case []int64:
+		return e.PutValues(v)
+	case []byte:
+		return e.PutBuffer(v)
+	default:
+		return fmt.Errorf(
+			"Put: to %s from %T not supported",
+			arrow.INT64.String(),
+			src,
+		)
+	}
+}
+
 func (e *Int64PlainEncoder) PutArrowArray(values array.Interface) error {
 	arrayType := arrow.Int64Type{}
 	if values.DataType().ID() != arrayType.ID() {
@@ -213,13 +227,10 @@ func (e *Int64PlainEncoder) PutArrowArray(values array.Interface) error {
 
 	if values.NullN() == 0 {
 		// no nulls, just dump the data
-		// e.sink.Append(arrow.Int64Traits.CastToBytes(rawValues)) // TODO: Remove (cleanup)
 		e.sink.AppendValues(rawValues)
 	} else {
-		// e.sink.Advance(arrow.Int64Traits.BytesRequired(int64Values.Len() - int64Values.NullN())) // TODO: Remove (cleanup)
 		for i := 0; i < vals.Len(); i++ {
 			if vals.IsValid(i) {
-				// e.sink.UnsafeAppend(arrow.Int64Traits.CastToBytes(rawValues[i : i+1])) // TODO: Remove (cleanup)
 				e.sink.AppendValue(vals.Value(i))
 			}
 		}
@@ -233,13 +244,13 @@ func (e *Int64PlainEncoder) PutValues(values []int64) error {
 	return nil
 }
 
-func (e *Int64PlainEncoder) Put(buffer []byte) error {
+func (e *Int64PlainEncoder) PutBuffer(buffer []byte) error {
 	e.sink.Append(buffer)
 	return nil
 }
 
-func (e *Int64PlainEncoder) PutSpaced(src interface{}, validBits []byte,
-	validBitsOffset int) error {
+func (e *Int64PlainEncoder) PutSpaced(
+	src interface{}, validBits []byte, validBitsOffset int) error {
 
 	vals, ok := src.([]int64)
 	if !ok {
@@ -288,21 +299,13 @@ const kInitialHashTableSize = 1 << 10
 // can be written out with the current dictionary size. More values
 // can then be added to the encoder, including new dictionary
 // entries.
-type dictEncoderBase struct {
-	dtype PhysicalType
-	sink  *arrayext.BufferBuilder
-}
-
-func newDictEncoderBase(dtype PhysicalType) *dictEncoderBase {
-	return &dictEncoderBase{
-		dtype: dtype,
-	}
-}
 
 //+ {{.DType}}DictEncoder
 type Int64DictEncoder struct {
 	encoderBase
-	dictEncoderBase
+
+	dtype PhysicalType
+	sink  *array.Int64BufferBuilder
 
 	// Indices that have not yet be written out by WriteIndices().
 	bufferedIndices []int32 // C++ implementation has this as an ArrowPoolVector
@@ -316,8 +319,10 @@ type Int64DictEncoder struct {
 //+ func New{{.DType}}DictEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*{{.DType}}DictEncoder, error) {
 func NewInt64DictEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64DictEncoder, error) {
 	return &Int64DictEncoder{
-		encoderBase:     newEncoderBase(descr, EncodingType_PLAIN_DICTIONARY, pool),
-		dictEncoderBase: *newDictEncoderBase(Int64Type),
+		encoderBase: newEncoderBase(descr, EncodingType_PLAIN_DICTIONARY, pool),
+
+		dtype: Int64Type,
+		sink:  array.NewInt64BufferBuilder(pool),
 	}, nil
 }
 
@@ -646,21 +651,12 @@ func (d *Int64PlainDecoder) DecodePlain(
 // ----------------------------------------------------------------------
 // Dictionary encoding and decoding
 
-type dictDecoderBase struct {
-	dtype PhysicalType
-	sink  *arrayext.BufferBuilder
-}
-
-func newDictDecoderBase(dtype PhysicalType) *dictDecoderBase {
-	return &dictDecoderBase{
-		dtype: dtype,
-	}
-}
-
 //+ {{.DType}}DictDecoder
 type Int64DictDecoder struct {
 	decoderBase
-	dictDecoderBase
+
+	// dtype PhysicalType // TODO: Cleanup Remove
+	sink *array.Int64BufferBuilder
 
 	// Only one is set.
 	dictionary *memory.Buffer
@@ -692,7 +688,7 @@ type Int64DictDecoder struct {
 func NewInt64DictDecoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64DictDecoder, error) {
 	return &Int64DictDecoder{
 		decoderBase:         *newDecoderBase(descr, EncodingType_RLE_DICTIONARY),
-		dictDecoderBase:     *newDictDecoderBase(Int64Type),
+		sink:                array.NewInt64BufferBuilder(pool),
 		dictionary:          AllocateBuffer(pool, 0),
 		dictionaryLength:    0,
 		byteArrayData:       AllocateBuffer(pool, 0),
@@ -788,7 +784,8 @@ func (d *Int64DictDecoder) DecodeIndicesSpaced(numValues int, nullCount int,
 		validBitsOffset, indicesBuffer) {
 		return 0, ParquetEofException
 	}
-	binaryBuilder := array
+	// binaryBuilder := array
+	panic("not implemented")
 }
 
 // ----------------------------------------------------------------------
