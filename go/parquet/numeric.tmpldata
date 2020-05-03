@@ -1,0 +1,16 @@
+[
+  {
+    "Name": "Int64",
+    "name": "int64",
+    "Type": "int64",
+    "Default": "0",
+    "Size": "8"
+  },
+  {
+    "Name": "Uint64",
+    "name": "uint64",
+    "Type": "uint64",
+    "Default": "0",
+    "Size": "8"
+  }
+]

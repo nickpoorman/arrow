@@ -1,0 +1,152 @@
+[
+    {
+        "T": "Boolean",
+        "CType": "bool",
+        "DefaultDataType": "arrow.FixedWidthTypes.Boolean"
+    },
+    {
+        "T": "Int8",
+        "CType": "int8",
+        "DefaultDataType": "arrow.PrimitiveTypes.Int8"
+    },
+    {
+        "T": "Int16",
+        "CType": "int16",
+        "DefaultDataType": "arrow.PrimitiveTypes.Int16"
+    },
+    {
+        "T": "Int32",
+        "CType": "int32",
+        "DefaultDataType": "arrow.PrimitiveTypes.Int32"
+    },
+    {
+        "T": "Int64",
+        "CType": "int64",
+        "DefaultDataType": "arrow.PrimitiveTypes.Int64"
+    },
+    {
+        "T": "Uint8",
+        "CType": "uint8",
+        "DefaultDataType": "arrow.PrimitiveTypes.Uint8"
+    },
+    {
+        "T": "Uint16",
+        "CType": "uint16",
+        "DefaultDataType": "arrow.PrimitiveTypes.Uint16"
+    },
+    {
+        "T": "Uint32",
+        "CType": "uint32",
+        "DefaultDataType": "arrow.PrimitiveTypes.Uint32"
+    },
+    {
+        "T": "Uint64",
+        "CType": "uint64",
+        "DefaultDataType": "arrow.PrimitiveTypes.Uint64"
+    },
+    {
+        "T": "HalfFloat",
+        "CType": "float16.Num",
+        "DefaultDataType": "arrow.FixedWidthTypes.Float16"
+    },
+    {
+        "T": "Float",
+        "CType": "float32",
+        "DefaultDataType": "arrow.PrimitiveTypes.Float32"
+    },
+    {
+        "T": "Double",
+        "CType": "float64",
+        "DefaultDataType": "arrow.PrimitiveTypes.Float64"
+    },
+    {
+        "T": "Binary",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": "arrow.BinaryTypes.Binary"
+    },
+    {
+        "T": "String",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": "arrow.BinaryTypes.String"
+    },
+    {
+        "T": "LargeBinary",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": "UnsupportedTypes.LargeBinary"
+    },
+    {
+        "T": "LargeString",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": ""
+    },
+    {
+        "T": "FixedSizeBinary",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": "(*arrow.FixedSizeBinaryType)(nil)"
+    },
+    {
+        "T": "Date32",
+        "CType": "arrow.Date32",
+        "DefaultDataType": "arrow.FixedWidthTypes.Date32"
+    },
+    {
+        "T": "Date64",
+        "CType": "arrow.Date64",
+        "DefaultDataType": "arrow.FixedWidthTypes.Date64"
+    },
+    {
+        "T": "Time32",
+        "CType": "arrow.Time32",
+        "DefaultDataType": "arrow.FixedWidthTypes.Time32ms"
+    },
+    {
+        "T": "Time64",
+        "CType": "arrow.Time64",
+        "DefaultDataType": "arrow.FixedWidthTypes.Time64ns"
+    },
+    {
+        "T": "Timestamp",
+        "CType": "arrow.Timestamp",
+        "DefaultDataType": "arrow.FixedWidthTypes.Timestamp_ms"
+    },
+    {
+        "T": "MonthInterval",
+        "CType": "arrow.MonthInterval",
+        "DefaultDataType": "arrow.FixedWidthTypes.MonthInterval"
+    },
+    {
+        "T": "DayTimeInterval",
+        "CType": "arrow.DayTimeInterval",
+        "DefaultDataType": "arrow.FixedWidthTypes.DayTimeInterval"
+    },
+    {
+        "T": "Duration",
+        "CType": "arrow.Duration",
+        "DefaultDataType": "arrow.FixedWidthTypes.Duration_ms"
+    },
+    {
+        "T": "Decimal128",
+        "CType": "decimal128.Num",
+        "DefaultDataType": "(*arrow.Decimal128Type)(nil)"
+    },
+    {
+        "T": "List",
+        "CType": "array.Interface",
+        "DefaultDataType": "(*arrow.ListType)(nil)"
+    },
+    {
+        "T": "largeList",
+        "CType": "array.Interface",
+        "DefaultDataType": "UnsupportedTypes.LargeList"
+    },
+    {
+        "T": "Map",
+        "CType": "array.Interface",
+        "DefaultDataType": "UnsupportedTypes.Map"
+    },
+    {
+        "T": "FixedSizeList",
+        "CType": "array.Interface",
+        "DefaultDataType": "(*arrow.FixedSizeListType)(nil)"
+    }
+]

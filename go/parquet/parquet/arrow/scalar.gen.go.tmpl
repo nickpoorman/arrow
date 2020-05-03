@@ -1,0 +1,43 @@
+package arrow
+
+import (
+	"github.com/apache/arrow/go/arrow"
+	"github.com/apache/arrow/go/arrow/array"
+	"github.com/apache/arrow/go/arrow/decimal128"
+	"github.com/apache/arrow/go/arrow/float16"
+	"github.com/apache/arrow/go/arrow/memory"
+)
+
+{{range .In}}
+type {{.T}}Scalar struct {
+	// The type of the scalar value
+	dataType arrow.DataType
+
+	// Whether the value is valid (not null) or not
+	isValid bool
+
+	value {{.CType}}
+}
+
+func New{{.T}}Scalar(value {{.CType}}, dataType arrow.DataType) {{.T}}Scalar {
+	return {{.T}}Scalar{
+		isValid: false,
+		dataType: dataType,
+	}
+}
+
+func (left {{.T}}Scalar) Equals(other Scalar) bool {
+	right, ok := other.({{.T}}Scalar)
+	return ok && left.value == right.value
+}
+
+func (left {{.T}}Scalar) NotEquals(other Scalar) bool {
+	return !left.Equals(other)
+}
+{{- end}}
+
+var (
+	{{range .In}}
+	_ Scalar = (*{{.T}}Scalar)(nil)
+	{{- end}}
+)
