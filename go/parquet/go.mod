@@ -2,7 +2,10 @@ module github.com/nickpoorman/arrow-parquet-go
 
 go 1.14
 
-replace github.com/apache/thrift v0.0.0-20181112125854-24918abba929 => github.com/apache/thrift v0.0.0-20181112125854-24918abba929
+replace (
+	github.com/apache/thrift v0.0.0-20181112125854-24918abba929 => github.com/apache/thrift v0.0.0-20181112125854-24918abba929
+	github.com/apache/arrow/go/arrow v0.0.0-20200320171404-4f9db530ed6e => ../arrow
+)
 
 require (
 	cloud.google.com/go/storage v1.6.0 // indirect

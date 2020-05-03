@@ -34,7 +34,7 @@ type BinaryBuilder struct {
 	builder
 
 	dtype   arrow.BinaryDataType
-	offsets *int32BufferBuilder
+	offsets *Int32BufferBuilder
 	values  *byteBufferBuilder
 }
 
@@ -42,7 +42,7 @@ func NewBinaryBuilder(mem memory.Allocator, dtype arrow.BinaryDataType) *BinaryB
 	b := &BinaryBuilder{
 		builder: builder{refCount: 1, mem: mem},
 		dtype:   dtype,
-		offsets: newInt32BufferBuilder(mem),
+		offsets: NewInt32BufferBuilder(mem),
 		values:  newByteBufferBuilder(mem),
 	}
 	return b

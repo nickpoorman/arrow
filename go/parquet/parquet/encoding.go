@@ -175,39 +175,29 @@ func (e encoderBase) MemoryPool() memory.Allocator { return e.pool }
 // ----------------------------------------------------------------------
 // PlainEncoder<T> implementations
 
-type plainEncoderBase struct {
-	dtype PhysicalType
-	sink  *arrayext.BufferBuilder
-}
-
-func newPlainEncoderBase(dtype PhysicalType, sink *arrayext.BufferBuilder) plainEncoderBase {
-	return plainEncoderBase{
-		dtype: dtype,
-		sink:  sink,
-	}
-}
-
-func (e plainEncoderBase) EstimatedDataEncodedSize() int { return e.sink.Len() }
-
-func (e plainEncoderBase) FlushValues() *memory.Buffer { return e.sink.Finish() }
-
 type Int64PlainEncoder struct {
 	encoderBase
-	plainEncoderBase
+
+	// base
+	// dtype PhysicalType // TODO: Remove (cleanup)
+	sink *array.Int64BufferBuilder
 }
 
 func NewInt64PlainEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64PlainEncoder, error) {
-	sink := arrayext.NewBufferBuilder(pool)
-
 	return &Int64PlainEncoder{
-		encoderBase:      newEncoderBase(descr, EncodingType_PLAIN, pool),
-		plainEncoderBase: newPlainEncoderBase(Int64Type, sink),
+		encoderBase: newEncoderBase(descr, EncodingType_PLAIN, pool),
+
+		// dtype: Int64Type, // TODO: Remove (cleanup)
+		sink: array.NewInt64BufferBuilder(pool),
 	}, nil
 }
 
+func (e *Int64PlainEncoder) EstimatedDataEncodedSize() int { return e.sink.Len() }
+
+func (e *Int64PlainEncoder) FlushValues() *memory.Buffer { return e.sink.Finish() }
+
 func (e *Int64PlainEncoder) PutArrowArray(values array.Interface) error {
 	arrayType := arrow.Int64Type{}
-
 	if values.DataType().ID() != arrayType.ID() {
 		return fmt.Errorf(
 			"PutArrowArray: direct put to %s from %s not supported",
@@ -218,17 +208,19 @@ func (e *Int64PlainEncoder) PutArrowArray(values array.Interface) error {
 
 	// TODO(nickpoorman): Not sure if we can cast here or if we need to init it from the data. Need to test this...
 	// int64Values := array.NewInt64Data(values.Data())
-	int64Values := values.(*array.Int64)
-	rawValues := int64Values.Int64Values()
+	vals := values.(*array.Int64)
+	rawValues := vals.Int64Values()
 
 	if values.NullN() == 0 {
 		// no nulls, just dump the data
-		e.sink.Append(arrow.Int64Traits.CastToBytes(rawValues))
+		// e.sink.Append(arrow.Int64Traits.CastToBytes(rawValues)) // TODO: Remove (cleanup)
+		e.sink.AppendValues(rawValues)
 	} else {
-		e.sink.Advance(arrow.Int64Traits.BytesRequired(int64Values.Len() - int64Values.NullN()))
-		for i := 0; i < int64Values.Len(); i++ {
-			if int64Values.IsValid(i) {
-				e.sink.UnsafeAppend(arrow.Int64Traits.CastToBytes(rawValues[i : i+1]))
+		// e.sink.Advance(arrow.Int64Traits.BytesRequired(int64Values.Len() - int64Values.NullN())) // TODO: Remove (cleanup)
+		for i := 0; i < vals.Len(); i++ {
+			if vals.IsValid(i) {
+				// e.sink.UnsafeAppend(arrow.Int64Traits.CastToBytes(rawValues[i : i+1])) // TODO: Remove (cleanup)
+				e.sink.AppendValue(vals.Value(i))
 			}
 		}
 	}
@@ -236,27 +228,20 @@ func (e *Int64PlainEncoder) PutArrowArray(values array.Interface) error {
 	return nil
 }
 
-func (e *Int64PlainEncoder) PutBuffer(buffer interface{}, numValues int) error {
-	if numValues > 0 {
-		switch v := buffer.(type) {
-		case []int64:
-			e.sink.Append(arrow.Int64Traits.CastToBytes(v))
-		default:
-			fmt.Errorf(
-				"PutBuffer: direct put to %s from %T not supported",
-				arrow.INT64.String(),
-				buffer,
-			)
-		}
-	}
+func (e *Int64PlainEncoder) PutValues(values []int64) error {
+	e.sink.AppendValues(values)
 	return nil
 }
 
-func (e *Int64PlainEncoder) PutSpaced(
-	src interface{}, numValues int, validBits []byte,
+func (e *Int64PlainEncoder) Put(buffer []byte) error {
+	e.sink.Append(buffer)
+	return nil
+}
+
+func (e *Int64PlainEncoder) PutSpaced(src interface{}, validBits []byte,
 	validBitsOffset int) error {
 
-	srcInt64, ok := src.([]int64)
+	vals, ok := src.([]int64)
 	if !ok {
 		return fmt.Errorf(
 			"PutSpaced: to %s from %T not supported",
@@ -264,6 +249,14 @@ func (e *Int64PlainEncoder) PutSpaced(
 			src,
 		)
 	}
+
+	return e.PutSpacedValues(vals, validBits, validBitsOffset)
+}
+
+func (e *Int64PlainEncoder) PutSpacedValues(
+	src []int64, validBits []byte,
+	validBitsOffset int) error {
+	numValues := len(src)
 
 	buffer := memory.NewResizableBuffer(e.MemoryPool())
 	buffer.Resize(arrow.Int64Traits.BytesRequired(numValues))
@@ -274,12 +267,12 @@ func (e *Int64PlainEncoder) PutSpaced(
 
 	for i := 0; i < numValues; i++ {
 		if validBitsReader.IsSet() {
-			data[numValidValues] = srcInt64[i]
+			data[numValidValues] = src[i]
 			numValidValues++
 		}
 		validBitsReader.Next()
 	}
-	return e.PutBuffer(data, numValidValues)
+	return e.PutValues(data[:numValidValues])
 }
 
 // ----------------------------------------------------------------------
