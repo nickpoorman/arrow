@@ -263,7 +263,7 @@ func (t *testDictionaryEncodingInt64) CheckRoundtrip() {
 	testutil.AssertNil(t.t, err)
 	dictDecoder.SetData(dictTraits.numEntries(), t.dictBuffer.Bytes(), t.dictBuffer.Len())
 
-	decoder, err := NewDictDecoder(Int64Type, t.descr)
+	decoder, err := NewDecoder(Int64Type, t.descr)
 	testutil.AssertNil(t.t, err)
 	decoder.SetDict(dictDecoder)
 

@@ -66,7 +66,7 @@ type TypedEncoder interface {
 type Decoder interface {
 	// Sets the data for a new page. This will be called multiple times on the same
 	// decoder and should reset all internal state.
-	SetData(numValues int, data []byte, len int)
+	SetData(numValues int, data []byte, len int) error
 
 	// Returns the number of values left (for the last call to SetData()). This is
 	// the number of values left in this page.
@@ -558,11 +558,12 @@ func newDecoderBase(descr *ColumnDescriptor, enc EncodingType) *decoderBase {
 	}
 }
 
-// SetData returns a copy of decoderBase with the updated params.
-func (d *decoderBase) SetData(numValues int, data []byte, len int) {
+// SetData updates decoderBase with the params.
+func (d *decoderBase) SetData(numValues int, data []byte, len int) error {
 	d.numValues = numValues
 	d.data = data
 	d.len = len
+	return nil
 }
 
 func (d *decoderBase) valuesLeft() int        { return d.numValues }
@@ -571,15 +572,19 @@ func (d *decoderBase) Encoding() EncodingType { return d.enc }
 // ----------------------------------------------------------------------
 // Typed plain decoder implementations
 
-type plainDecoderBase struct {
+type Int64PlainDecoder struct {
+	decoderBase
 	dtype PhysicalType
 }
 
-func newPlainDecoderBase(dtype PhysicalType) plainDecoderBase {
-	return plainDecoderBase{}
+func NewInt64PlainDecoder(descr *ColumnDescriptor) (*Int64PlainDecoder, error) {
+	return &Int64PlainDecoder{
+		decoderBase: *newDecoderBase(descr, EncodingType_PLAIN),
+		dtype:       Int64Type,
+	}, nil
 }
 
-func (d plainDecoderBase) DecodeSpaced(
+func (d *Int64PlainDecoder) DecodeSpaced(
 	buffer interface{}, numValues int, nullCount int,
 	validBits []byte, validBitsOffset int) (int, error) {
 	// int values_to_read = num_values - null_count;
@@ -603,18 +608,6 @@ func (d plainDecoderBase) DecodeSpaced(
 	// }
 	// return num_values;
 	panic("not yet implemented")
-}
-
-type Int64PlainDecoder struct {
-	decoderBase
-	plainDecoderBase
-}
-
-func NewInt64PlainDecoder(descr *ColumnDescriptor) (*Int64PlainDecoder, error) {
-	return &Int64PlainDecoder{
-		decoderBase:      *newDecoderBase(descr, EncodingType_PLAIN),
-		plainDecoderBase: newPlainDecoderBase(Int64Type),
-	}, nil
 }
 
 func (d *Int64PlainDecoder) DecodeBuffer(buffer interface{}, maxValues int) (int, error) {
@@ -856,6 +849,7 @@ func NewPlainEncoder(
 	}
 }
 
+// TODO: Remove this?
 func NewTypedDecoder(
 	dtype PhysicalType, encoding EncodingType,
 	descr *ColumnDescriptor) (TypedDecoder, error) {
@@ -888,7 +882,39 @@ func NewPlainDecoder(typeNum Type, descr *ColumnDescriptor) (Decoder, error) {
 		return NewInt64PlainDecoder(descr)
 	default:
 		return nil, fmt.Errorf(
-			"plain encoder for %s not implemented: %w",
+			"plain decoder for %s not implemented: %w",
+			TypeToString(typeNum),
+			ParquetNYIException,
+		)
+	}
+}
+
+func NewDictDecoder(
+	typeNum Type, descr *ColumnDescriptor, pool memory.Allocator) (Decoder, error) {
+
+	switch typeNum {
+	case Type_BOOLEAN:
+		return nil, fmt.Errorf(
+			"Dictionary decoding not implemented for boolean type: %w",
+			ParquetNYIException,
+		)
+	// case Type_INT32:
+	// return NewInt32DictDecoder(descr, pool)
+	case Type_INT64:
+		return NewInt64DictDecoder(descr, pool)
+	// case Type_INT96:
+	// return NewInt96DictDecoder(descr, pool)
+	// case Type_FLOAT:
+	// return NewFloat32DictDecoder(descr, pool)
+	// case Type_DOUBLE:
+	// return NewFloat64DictDecoder(descr, pool)
+	// case Type_BYTE_ARRAY:
+	// return NewByteArrayDictDecoder(descr, pool)
+	// case Type_FIXED_LEN_BYTE_ARRAY:
+	// return NewFBLADictDecoder(descr, pool)
+	default:
+		return nil, fmt.Errorf(
+			"dict decoder for %s not implemented: %w",
 			TypeToString(typeNum),
 			ParquetNYIException,
 		)
