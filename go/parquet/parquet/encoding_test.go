@@ -263,12 +263,12 @@ func (t *testDictionaryEncodingInt64) CheckRoundtrip() {
 	testutil.AssertNil(t.t, err)
 	dictDecoder.SetData(dictTraits.numEntries(), t.dictBuffer.Bytes(), t.dictBuffer.Len())
 
-	decoder, err := NewDecoder(Int64Type, t.descr)
+	decoder, err := NewDictDecoder(Int64Type.typeNum(), t.descr, t.allocator)
 	testutil.AssertNil(t.t, err)
 	decoder.SetDict(dictDecoder)
 
-	decoder.SetData(t.numValues, indicies, len(indicies))
-	valuesDecoded := decoder.DecodeBuffer(t.decodeBuf, t.numValues)
+	decoder.SetData(t.numValues, indicies.Bytes(), indicies.Len())
+	valuesDecoded := decoder.Decode(t.decodeBuf, t.numValues)
 	testutil.AssertEqInt(t.t, valuesDecoded, t.numValues)
 
 	// TODO: The DictionaryDecoder must stay alive because the decoded
@@ -284,8 +284,12 @@ func (t *testDictionaryEncodingInt64) CheckRoundtrip() {
 }
 
 func TestDictionaryEncoding_BasicRoundTrip(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
 	for _, c := range DictEncodedTypes {
 		runner := newTestDictionaryEncodingInt64(t, c)
+		runner.allocator = pool
 		runner.Execute(10000, 1)
 	}
 }

@@ -107,7 +107,8 @@ type TypedDecoder interface {
 	// maxBalues - maximum number of values to decode
 	// returns the number of values decoded. Should be identical to maxValues except
 	// at the end of the current data page.
-	DecodeBuffer(buffer interface{}, makeValues int) (int, error)
+	// DecodeBuffer(buffer interface{}, makeValues int) (int, error)
+	Decode(buffer interface{}, numValues int) (int, error)
 
 	// Decode the values in this data page but leave spaces for null entries.
 	//
@@ -119,7 +120,7 @@ type TypedDecoder interface {
 	// validBitsOffset - offset into valid_bits
 	// returns the number of values decoded, including nulls.
 	DecodeSpaced(buffer interface{}, numValues int, nullCount int,
-		validBits []byte, validBitsOffset int) (int, error)
+		validBits []byte, validBitsOffset int64) (int, error)
 
 	// Decode into an ArrayBuilder or other accumulator
 	//
@@ -140,6 +141,12 @@ type TypedDecoder interface {
 	//
 	// returns number of values decoded
 	// DecodeArrowNonNull(numValues int, builder *DictAccumulator, validBits []byte) (int, error) // return DecodeArrow(num_values, 0, &valid_bits, 0, builder)
+}
+
+type DictDecoder interface {
+	TypedDecoder
+
+	SetDict(dictionary TypedDecoder) error
 }
 
 // ----------------------------------------------------------------------
@@ -586,7 +593,7 @@ func NewInt64PlainDecoder(descr *ColumnDescriptor) (*Int64PlainDecoder, error) {
 
 func (d *Int64PlainDecoder) DecodeSpaced(
 	buffer interface{}, numValues int, nullCount int,
-	validBits []byte, validBitsOffset int) (int, error) {
+	validBits []byte, validBitsOffset int64) (int, error) {
 	// int values_to_read = num_values - null_count;
 	// int values_read = Decode(buffer, values_to_read);
 	// if (values_read != values_to_read) {
@@ -610,7 +617,23 @@ func (d *Int64PlainDecoder) DecodeSpaced(
 	panic("not yet implemented")
 }
 
-func (d *Int64PlainDecoder) DecodeBuffer(buffer interface{}, maxValues int) (int, error) {
+// numValues is the number of values in it's type,
+// i.e. not the number of bytes.
+func (d *Int64PlainDecoder) Decode(buffer interface{}, maxValues int) (int, error) {
+	switch v := buffer.(type) {
+	case []int64:
+		return d.DecodeValues(v, maxValues)
+	case []byte:
+		return d.DecodeValues(arrow.Int64Traits.CastFromBytes(v), maxValues)
+	default:
+		return 0, fmt.Errorf(
+			"Int64PlainDecoder: to %T not supported",
+			buffer,
+		)
+	}
+}
+
+func (d *Int64PlainDecoder) DecodeValues(buffer []int64, maxValues int) (int, error) {
 	if d.numValues < maxValues {
 		maxValues = d.numValues
 	}
@@ -690,9 +713,19 @@ func NewInt64DictDecoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64
 	}, nil
 }
 
+func (d *Int64DictDecoder) decodeDict(dictionary TypedDecoder) (int, error) {
+	d.dictionaryLength = int32(dictionary.valuesLeft())
+	d.dictionary.ResizeNoShrink(
+		arrow.Int64Traits.BytesRequired(int(d.dictionaryLength)),
+	)
+	return dictionary.Decode(d.dictionary.Buf(), int(d.dictionaryLength))
+}
+
 // Perform type-specific initiatialization
-func (d *Int64DictDecoder) SetDict(dictionary Int64DictDecoder) {
-	panic("not implemented")
+func (d *Int64DictDecoder) SetDict(dictionary TypedDecoder) error {
+	// TODO(nickpoorman): This is different for each type we generate
+	_, err := d.decodeDict(dictionary)
+	return err
 }
 
 func (d *Int64DictDecoder) SetData(numValues int, data []byte, len int) error {
@@ -713,9 +746,24 @@ func (d *Int64DictDecoder) SetData(numValues int, data []byte, len int) error {
 	return nil
 }
 
-// TODO(nickpoorman): Maybe buffer here should be an []bytes and then we don't have to do T?
+// numValues is the number of values in it's type,
+// i.e. not the number of bytes.
+func (d *Int64DictDecoder) Decode(buffer interface{}, numValues int) (int, error) {
+	switch v := buffer.(type) {
+	case []int64:
+		return d.DecodeValues(v, numValues)
+	case []byte:
+		return d.DecodeValues(arrow.Int64Traits.CastFromBytes(v), numValues)
+	default:
+		return 0, fmt.Errorf(
+			"{{.DType}} Decode: to %T not supported",
+			buffer,
+		)
+	}
+}
+
 // func (d *Int64DictDecoder) Decode(buffer {{.CType}}, numValues int) (int, error) {
-func (d *Int64DictDecoder) Decode(buffer int64, numValues int) (int, error) {
+func (d *Int64DictDecoder) DecodeValues(values []int64, numValues int) (int, error) {
 	if d.numValues < numValues {
 		numValues = d.numValues
 	}
@@ -723,7 +771,7 @@ func (d *Int64DictDecoder) Decode(buffer int64, numValues int) (int, error) {
 	decodedValues := d.idxDecoder.GetBatchWithDict(
 		// arrow.{{.DType}}Traits.CastFromBytes(d.dictionary.Bytes()),
 		arrow.Int64Traits.CastFromBytes(d.dictionary.Bytes()),
-		d.dictionaryLength, int(buffer), numValues)
+		d.dictionaryLength, values, numValues)
 
 	if decodedValues != numValues {
 		return 0, ParquetEofException
@@ -732,8 +780,27 @@ func (d *Int64DictDecoder) Decode(buffer int64, numValues int) (int, error) {
 	return numValues, nil
 }
 
-// func (d *Int64DictDecoder) DecodeSpaced(buffer {{.CType}}, numValues int, nullCount int,
-func (d *Int64DictDecoder) DecodeSpaced(buffer int64, numValues int, nullCount int,
+// numValues is the number of values in it's type,
+// i.e. not the number of bytes.
+func (d *Int64DictDecoder) DecodeSpaced(src interface{}, numValues int, nullCount int,
+	validBits []byte, validBitsOffset int64) (int, error) {
+	switch v := src.(type) {
+	case []int64:
+		return d.DecodeSpacedValues(v,
+			numValues, nullCount, validBits, validBitsOffset)
+	case []byte:
+		return d.DecodeSpacedValues(arrow.Int64Traits.CastFromBytes(v),
+			numValues, nullCount, validBits, validBitsOffset)
+	default:
+		return 0, fmt.Errorf(
+			"{{.DType}} DecodeSpaced: to %T not supported",
+			src,
+		)
+	}
+}
+
+// func (d *Int64DictDecoder) DecodeSpacedValues(buffer {{.CType}}, numValues int, nullCount int,
+func (d *Int64DictDecoder) DecodeSpacedValues(buffer []int64, numValues int, nullCount int,
 	validBits []byte, validBitsOffset int64) (int, error) {
 	numValues = util.MinInt(numValues, d.numValues)
 	if numValues != d.idxDecoder.GetBatchWithDictSpaced(
@@ -778,6 +845,10 @@ func (d *Int64DictDecoder) DecodeIndicesSpaced(numValues int, nullCount int,
 		return 0, ParquetEofException
 	}
 	// binaryBuilder := array
+	panic("not implemented")
+}
+
+func (d *Int64DictDecoder) DecodeBuffer(buffer interface{}, makeValues int) (int, error) {
 	panic("not implemented")
 }
 
@@ -890,7 +961,7 @@ func NewPlainDecoder(typeNum Type, descr *ColumnDescriptor) (Decoder, error) {
 }
 
 func NewDictDecoder(
-	typeNum Type, descr *ColumnDescriptor, pool memory.Allocator) (Decoder, error) {
+	typeNum Type, descr *ColumnDescriptor, pool memory.Allocator) (DictDecoder, error) {
 
 	switch typeNum {
 	case Type_BOOLEAN:
@@ -931,4 +1002,8 @@ var (
 	_ Decoder = (*Int64PlainDecoder)(nil)
 	// _ PlainDecoder = (*Int64PlainDecoder)(nil)
 	_ TypedDecoder = (*Int64PlainDecoder)(nil)
+
+	_ Decoder      = (*Int64DictDecoder)(nil)
+	_ TypedDecoder = (*Int64DictDecoder)(nil)
+	_ DictDecoder  = (*Int64DictDecoder)(nil)
 )
