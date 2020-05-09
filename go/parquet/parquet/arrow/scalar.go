@@ -73,6 +73,22 @@ func NewNullScalar(dataType arrow.DataType) NullScalar {
 	}
 }
 
+func (s NullScalar) Equals(other Scalar) bool {
+	_, ok := other.(NullScalar)
+	if !ok {
+		return false
+	}
+	return true
+}
+
+func (s NullScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s NullScalar) ValueBytes() []byte {
+	panic("not implemented")
+}
+
 type StructScalar struct {
 	// The type of the scalar value
 	dataType arrow.DataType
@@ -108,6 +124,10 @@ func (s StructScalar) NotEquals(other Scalar) bool {
 	return !s.Equals(other)
 }
 
+func (s StructScalar) ValueBytes() []byte {
+	panic("not implemented")
+}
+
 type UnionScalar struct {
 	// The type of the scalar value
 	dataType arrow.DataType
@@ -133,6 +153,10 @@ func (s UnionScalar) Equals(other Scalar) bool {
 
 func (s UnionScalar) NotEquals(other Scalar) bool {
 	return !s.Equals(other)
+}
+
+func (s UnionScalar) ValueBytes() []byte {
+	panic("not implemented")
 }
 
 type DictionaryScalar struct {
@@ -163,6 +187,10 @@ func (s DictionaryScalar) NotEquals(other Scalar) bool {
 	return !s.Equals(other)
 }
 
+func (s DictionaryScalar) ValueBytes() []byte {
+	panic("not implemented")
+}
+
 type ExtensionScalar struct {
 	// The type of the scalar value
 	dataType arrow.DataType
@@ -190,6 +218,10 @@ func (s ExtensionScalar) NotEquals(other Scalar) bool {
 	return !s.Equals(other)
 }
 
+func (s ExtensionScalar) ValueBytes() []byte {
+	panic("not implemented")
+}
+
 func MakeNullScalar(dataType arrow.DataType) Scalar {
 	panic("not implemented")
 }
@@ -202,5 +234,9 @@ func CheckBufferLength(t *arrow.FixedSizeBinaryType, b *memory.Buffer) error {
 }
 
 var (
+	_ Scalar = (*NullScalar)(nil)
 	_ Scalar = (*StructScalar)(nil)
+	_ Scalar = (*UnionScalar)(nil)
+	_ Scalar = (*DictionaryScalar)(nil)
+	_ Scalar = (*ExtensionScalar)(nil)
 )
