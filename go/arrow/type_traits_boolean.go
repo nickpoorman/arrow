@@ -26,3 +26,12 @@ var BooleanTraits booleanTraits
 
 // BytesRequired returns the number of bytes required to store n elements in memory.
 func (booleanTraits) BytesRequired(n int) int { return bitutil.CeilByte(n) / 8 }
+
+// PutValue
+func (booleanTraits) PutValue(b []byte, v bool) {
+	if v {
+		b[0] = 1
+	} else {
+		b[0] = 0
+	}
+}

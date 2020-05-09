@@ -177,7 +177,7 @@ func process(data interface{}, specs []pathSpec) {
 			generated, err = formatter(generated)
 			if err != nil {
 				// Write out a file so we can see what went wrong
-				ioutil.WriteFile(fmt.Sprintf("%s.debug.tmp.go", spec.out), generated, fileMode(spec.in))
+				ioutil.WriteFile(fmt.Sprintf("%s.debug.tmp.go", spec.out), buf.Bytes(), fileMode(spec.in))
 				errExit("error formatting '%s': %s", spec.in, err.Error())
 			}
 		}

@@ -26,13 +26,29 @@ func New{{.T}}Scalar(value {{.CType}}, dataType arrow.DataType) {{.T}}Scalar {
 	}
 }
 
-func (left {{.T}}Scalar) Equals(other Scalar) bool {
+func (s {{.T}}Scalar) Equals(other Scalar) bool {
 	right, ok := other.({{.T}}Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left {{.T}}Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s {{.T}}Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s {{.T}}Scalar) Value() {{.CType}} {
+	return s.value
+}
+
+func (s {{.T}}Scalar) ValueBytes() []byte {
+	{{- if .SizeBytes}}
+	b := make([]byte, {{.SizeBytes}})
+	arrow.{{.T}}Traits.PutValue(b, s.value)
+	return b
+	{{- else if eq .CType "*memory.Buffer"}}
+	return s.value.Bytes()
+	{{- else}}
+	panic("not implemented")
+	{{- end}}
 }
 {{- end}}
 

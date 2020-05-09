@@ -7,6 +7,17 @@ import (
 	"github.com/apache/arrow/go/arrow/memory"
 )
 
+type Scalar interface {
+	EqualityComparableScalar
+	// Returns a reader to the value. Note this has more overhead than ValueBytes()
+	ValueBytes() []byte
+}
+
+type EqualityComparableScalar interface {
+	Equals(other Scalar) bool
+	NotEquals(other Scalar) bool
+}
+
 // TODO(nickpoorman):
 // Current Arrow implementation does not yet support these types.
 
@@ -50,15 +61,6 @@ var (
 		LargeList:   (*LargeListType)(nil),
 	}
 )
-
-type EqualityComparableScalar interface {
-	Equals(other Scalar) bool
-	NotEquals(other Scalar) bool
-}
-
-type Scalar interface {
-	EqualityComparableScalar
-}
 
 type NullScalar struct {
 	// The type of the scalar value

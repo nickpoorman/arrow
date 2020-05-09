@@ -27,13 +27,23 @@ func NewBooleanScalar(value bool, dataType arrow.DataType) BooleanScalar {
 	}
 }
 
-func (left BooleanScalar) Equals(other Scalar) bool {
+func (s BooleanScalar) Equals(other Scalar) bool {
 	right, ok := other.(BooleanScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left BooleanScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s BooleanScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s BooleanScalar) Value() bool {
+	return s.value
+}
+
+func (s BooleanScalar) ValueBytes() []byte {
+	b := make([]byte, 1)
+	arrow.BooleanTraits.PutValue(b, s.value)
+	return b
 }
 
 type Int8Scalar struct {
@@ -53,13 +63,23 @@ func NewInt8Scalar(value int8, dataType arrow.DataType) Int8Scalar {
 	}
 }
 
-func (left Int8Scalar) Equals(other Scalar) bool {
+func (s Int8Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Int8Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Int8Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Int8Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Int8Scalar) Value() int8 {
+	return s.value
+}
+
+func (s Int8Scalar) ValueBytes() []byte {
+	b := make([]byte, 1)
+	arrow.Int8Traits.PutValue(b, s.value)
+	return b
 }
 
 type Int16Scalar struct {
@@ -79,13 +99,23 @@ func NewInt16Scalar(value int16, dataType arrow.DataType) Int16Scalar {
 	}
 }
 
-func (left Int16Scalar) Equals(other Scalar) bool {
+func (s Int16Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Int16Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Int16Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Int16Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Int16Scalar) Value() int16 {
+	return s.value
+}
+
+func (s Int16Scalar) ValueBytes() []byte {
+	b := make([]byte, 2)
+	arrow.Int16Traits.PutValue(b, s.value)
+	return b
 }
 
 type Int32Scalar struct {
@@ -105,13 +135,23 @@ func NewInt32Scalar(value int32, dataType arrow.DataType) Int32Scalar {
 	}
 }
 
-func (left Int32Scalar) Equals(other Scalar) bool {
+func (s Int32Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Int32Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Int32Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Int32Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Int32Scalar) Value() int32 {
+	return s.value
+}
+
+func (s Int32Scalar) ValueBytes() []byte {
+	b := make([]byte, 4)
+	arrow.Int32Traits.PutValue(b, s.value)
+	return b
 }
 
 type Int64Scalar struct {
@@ -131,13 +171,23 @@ func NewInt64Scalar(value int64, dataType arrow.DataType) Int64Scalar {
 	}
 }
 
-func (left Int64Scalar) Equals(other Scalar) bool {
+func (s Int64Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Int64Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Int64Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Int64Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Int64Scalar) Value() int64 {
+	return s.value
+}
+
+func (s Int64Scalar) ValueBytes() []byte {
+	b := make([]byte, 8)
+	arrow.Int64Traits.PutValue(b, s.value)
+	return b
 }
 
 type Uint8Scalar struct {
@@ -157,13 +207,23 @@ func NewUint8Scalar(value uint8, dataType arrow.DataType) Uint8Scalar {
 	}
 }
 
-func (left Uint8Scalar) Equals(other Scalar) bool {
+func (s Uint8Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Uint8Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Uint8Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Uint8Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Uint8Scalar) Value() uint8 {
+	return s.value
+}
+
+func (s Uint8Scalar) ValueBytes() []byte {
+	b := make([]byte, 1)
+	arrow.Uint8Traits.PutValue(b, s.value)
+	return b
 }
 
 type Uint16Scalar struct {
@@ -183,13 +243,23 @@ func NewUint16Scalar(value uint16, dataType arrow.DataType) Uint16Scalar {
 	}
 }
 
-func (left Uint16Scalar) Equals(other Scalar) bool {
+func (s Uint16Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Uint16Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Uint16Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Uint16Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Uint16Scalar) Value() uint16 {
+	return s.value
+}
+
+func (s Uint16Scalar) ValueBytes() []byte {
+	b := make([]byte, 2)
+	arrow.Uint16Traits.PutValue(b, s.value)
+	return b
 }
 
 type Uint32Scalar struct {
@@ -209,13 +279,23 @@ func NewUint32Scalar(value uint32, dataType arrow.DataType) Uint32Scalar {
 	}
 }
 
-func (left Uint32Scalar) Equals(other Scalar) bool {
+func (s Uint32Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Uint32Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Uint32Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Uint32Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Uint32Scalar) Value() uint32 {
+	return s.value
+}
+
+func (s Uint32Scalar) ValueBytes() []byte {
+	b := make([]byte, 4)
+	arrow.Uint32Traits.PutValue(b, s.value)
+	return b
 }
 
 type Uint64Scalar struct {
@@ -235,16 +315,26 @@ func NewUint64Scalar(value uint64, dataType arrow.DataType) Uint64Scalar {
 	}
 }
 
-func (left Uint64Scalar) Equals(other Scalar) bool {
+func (s Uint64Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Uint64Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Uint64Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Uint64Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
 }
 
-type HalfFloatScalar struct {
+func (s Uint64Scalar) Value() uint64 {
+	return s.value
+}
+
+func (s Uint64Scalar) ValueBytes() []byte {
+	b := make([]byte, 8)
+	arrow.Uint64Traits.PutValue(b, s.value)
+	return b
+}
+
+type Float16Scalar struct {
 	// The type of the scalar value
 	dataType arrow.DataType
 
@@ -254,23 +344,33 @@ type HalfFloatScalar struct {
 	value float16.Num
 }
 
-func NewHalfFloatScalar(value float16.Num, dataType arrow.DataType) HalfFloatScalar {
-	return HalfFloatScalar{
+func NewFloat16Scalar(value float16.Num, dataType arrow.DataType) Float16Scalar {
+	return Float16Scalar{
 		isValid:  false,
 		dataType: dataType,
 	}
 }
 
-func (left HalfFloatScalar) Equals(other Scalar) bool {
-	right, ok := other.(HalfFloatScalar)
-	return ok && left.value == right.value
+func (s Float16Scalar) Equals(other Scalar) bool {
+	right, ok := other.(Float16Scalar)
+	return ok && s.value == right.value
 }
 
-func (left HalfFloatScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Float16Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
 }
 
-type FloatScalar struct {
+func (s Float16Scalar) Value() float16.Num {
+	return s.value
+}
+
+func (s Float16Scalar) ValueBytes() []byte {
+	b := make([]byte, 2)
+	arrow.Float16Traits.PutValue(b, s.value)
+	return b
+}
+
+type Float32Scalar struct {
 	// The type of the scalar value
 	dataType arrow.DataType
 
@@ -280,23 +380,33 @@ type FloatScalar struct {
 	value float32
 }
 
-func NewFloatScalar(value float32, dataType arrow.DataType) FloatScalar {
-	return FloatScalar{
+func NewFloat32Scalar(value float32, dataType arrow.DataType) Float32Scalar {
+	return Float32Scalar{
 		isValid:  false,
 		dataType: dataType,
 	}
 }
 
-func (left FloatScalar) Equals(other Scalar) bool {
-	right, ok := other.(FloatScalar)
-	return ok && left.value == right.value
+func (s Float32Scalar) Equals(other Scalar) bool {
+	right, ok := other.(Float32Scalar)
+	return ok && s.value == right.value
 }
 
-func (left FloatScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Float32Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
 }
 
-type DoubleScalar struct {
+func (s Float32Scalar) Value() float32 {
+	return s.value
+}
+
+func (s Float32Scalar) ValueBytes() []byte {
+	b := make([]byte, 4)
+	arrow.Float32Traits.PutValue(b, s.value)
+	return b
+}
+
+type Float64Scalar struct {
 	// The type of the scalar value
 	dataType arrow.DataType
 
@@ -306,20 +416,30 @@ type DoubleScalar struct {
 	value float64
 }
 
-func NewDoubleScalar(value float64, dataType arrow.DataType) DoubleScalar {
-	return DoubleScalar{
+func NewFloat64Scalar(value float64, dataType arrow.DataType) Float64Scalar {
+	return Float64Scalar{
 		isValid:  false,
 		dataType: dataType,
 	}
 }
 
-func (left DoubleScalar) Equals(other Scalar) bool {
-	right, ok := other.(DoubleScalar)
-	return ok && left.value == right.value
+func (s Float64Scalar) Equals(other Scalar) bool {
+	right, ok := other.(Float64Scalar)
+	return ok && s.value == right.value
 }
 
-func (left DoubleScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Float64Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Float64Scalar) Value() float64 {
+	return s.value
+}
+
+func (s Float64Scalar) ValueBytes() []byte {
+	b := make([]byte, 8)
+	arrow.Float64Traits.PutValue(b, s.value)
+	return b
 }
 
 type BinaryScalar struct {
@@ -339,13 +459,21 @@ func NewBinaryScalar(value *memory.Buffer, dataType arrow.DataType) BinaryScalar
 	}
 }
 
-func (left BinaryScalar) Equals(other Scalar) bool {
+func (s BinaryScalar) Equals(other Scalar) bool {
 	right, ok := other.(BinaryScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left BinaryScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s BinaryScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s BinaryScalar) Value() *memory.Buffer {
+	return s.value
+}
+
+func (s BinaryScalar) ValueBytes() []byte {
+	return s.value.Bytes()
 }
 
 type StringScalar struct {
@@ -365,13 +493,21 @@ func NewStringScalar(value *memory.Buffer, dataType arrow.DataType) StringScalar
 	}
 }
 
-func (left StringScalar) Equals(other Scalar) bool {
+func (s StringScalar) Equals(other Scalar) bool {
 	right, ok := other.(StringScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left StringScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s StringScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s StringScalar) Value() *memory.Buffer {
+	return s.value
+}
+
+func (s StringScalar) ValueBytes() []byte {
+	return s.value.Bytes()
 }
 
 type LargeBinaryScalar struct {
@@ -391,13 +527,21 @@ func NewLargeBinaryScalar(value *memory.Buffer, dataType arrow.DataType) LargeBi
 	}
 }
 
-func (left LargeBinaryScalar) Equals(other Scalar) bool {
+func (s LargeBinaryScalar) Equals(other Scalar) bool {
 	right, ok := other.(LargeBinaryScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left LargeBinaryScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s LargeBinaryScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s LargeBinaryScalar) Value() *memory.Buffer {
+	return s.value
+}
+
+func (s LargeBinaryScalar) ValueBytes() []byte {
+	return s.value.Bytes()
 }
 
 type LargeStringScalar struct {
@@ -417,13 +561,21 @@ func NewLargeStringScalar(value *memory.Buffer, dataType arrow.DataType) LargeSt
 	}
 }
 
-func (left LargeStringScalar) Equals(other Scalar) bool {
+func (s LargeStringScalar) Equals(other Scalar) bool {
 	right, ok := other.(LargeStringScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left LargeStringScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s LargeStringScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s LargeStringScalar) Value() *memory.Buffer {
+	return s.value
+}
+
+func (s LargeStringScalar) ValueBytes() []byte {
+	return s.value.Bytes()
 }
 
 type FixedSizeBinaryScalar struct {
@@ -443,13 +595,21 @@ func NewFixedSizeBinaryScalar(value *memory.Buffer, dataType arrow.DataType) Fix
 	}
 }
 
-func (left FixedSizeBinaryScalar) Equals(other Scalar) bool {
+func (s FixedSizeBinaryScalar) Equals(other Scalar) bool {
 	right, ok := other.(FixedSizeBinaryScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left FixedSizeBinaryScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s FixedSizeBinaryScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s FixedSizeBinaryScalar) Value() *memory.Buffer {
+	return s.value
+}
+
+func (s FixedSizeBinaryScalar) ValueBytes() []byte {
+	return s.value.Bytes()
 }
 
 type Date32Scalar struct {
@@ -469,13 +629,23 @@ func NewDate32Scalar(value arrow.Date32, dataType arrow.DataType) Date32Scalar {
 	}
 }
 
-func (left Date32Scalar) Equals(other Scalar) bool {
+func (s Date32Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Date32Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Date32Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Date32Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Date32Scalar) Value() arrow.Date32 {
+	return s.value
+}
+
+func (s Date32Scalar) ValueBytes() []byte {
+	b := make([]byte, 4)
+	arrow.Date32Traits.PutValue(b, s.value)
+	return b
 }
 
 type Date64Scalar struct {
@@ -495,13 +665,23 @@ func NewDate64Scalar(value arrow.Date64, dataType arrow.DataType) Date64Scalar {
 	}
 }
 
-func (left Date64Scalar) Equals(other Scalar) bool {
+func (s Date64Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Date64Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Date64Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Date64Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Date64Scalar) Value() arrow.Date64 {
+	return s.value
+}
+
+func (s Date64Scalar) ValueBytes() []byte {
+	b := make([]byte, 8)
+	arrow.Date64Traits.PutValue(b, s.value)
+	return b
 }
 
 type Time32Scalar struct {
@@ -521,13 +701,23 @@ func NewTime32Scalar(value arrow.Time32, dataType arrow.DataType) Time32Scalar {
 	}
 }
 
-func (left Time32Scalar) Equals(other Scalar) bool {
+func (s Time32Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Time32Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Time32Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Time32Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Time32Scalar) Value() arrow.Time32 {
+	return s.value
+}
+
+func (s Time32Scalar) ValueBytes() []byte {
+	b := make([]byte, 4)
+	arrow.Time32Traits.PutValue(b, s.value)
+	return b
 }
 
 type Time64Scalar struct {
@@ -547,13 +737,23 @@ func NewTime64Scalar(value arrow.Time64, dataType arrow.DataType) Time64Scalar {
 	}
 }
 
-func (left Time64Scalar) Equals(other Scalar) bool {
+func (s Time64Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Time64Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Time64Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Time64Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Time64Scalar) Value() arrow.Time64 {
+	return s.value
+}
+
+func (s Time64Scalar) ValueBytes() []byte {
+	b := make([]byte, 8)
+	arrow.Time64Traits.PutValue(b, s.value)
+	return b
 }
 
 type TimestampScalar struct {
@@ -573,13 +773,23 @@ func NewTimestampScalar(value arrow.Timestamp, dataType arrow.DataType) Timestam
 	}
 }
 
-func (left TimestampScalar) Equals(other Scalar) bool {
+func (s TimestampScalar) Equals(other Scalar) bool {
 	right, ok := other.(TimestampScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left TimestampScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s TimestampScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s TimestampScalar) Value() arrow.Timestamp {
+	return s.value
+}
+
+func (s TimestampScalar) ValueBytes() []byte {
+	b := make([]byte, 8)
+	arrow.TimestampTraits.PutValue(b, s.value)
+	return b
 }
 
 type MonthIntervalScalar struct {
@@ -599,13 +809,23 @@ func NewMonthIntervalScalar(value arrow.MonthInterval, dataType arrow.DataType) 
 	}
 }
 
-func (left MonthIntervalScalar) Equals(other Scalar) bool {
+func (s MonthIntervalScalar) Equals(other Scalar) bool {
 	right, ok := other.(MonthIntervalScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left MonthIntervalScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s MonthIntervalScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s MonthIntervalScalar) Value() arrow.MonthInterval {
+	return s.value
+}
+
+func (s MonthIntervalScalar) ValueBytes() []byte {
+	b := make([]byte, 4)
+	arrow.MonthIntervalTraits.PutValue(b, s.value)
+	return b
 }
 
 type DayTimeIntervalScalar struct {
@@ -625,13 +845,23 @@ func NewDayTimeIntervalScalar(value arrow.DayTimeInterval, dataType arrow.DataTy
 	}
 }
 
-func (left DayTimeIntervalScalar) Equals(other Scalar) bool {
+func (s DayTimeIntervalScalar) Equals(other Scalar) bool {
 	right, ok := other.(DayTimeIntervalScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left DayTimeIntervalScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s DayTimeIntervalScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s DayTimeIntervalScalar) Value() arrow.DayTimeInterval {
+	return s.value
+}
+
+func (s DayTimeIntervalScalar) ValueBytes() []byte {
+	b := make([]byte, 8)
+	arrow.DayTimeIntervalTraits.PutValue(b, s.value)
+	return b
 }
 
 type DurationScalar struct {
@@ -651,13 +881,23 @@ func NewDurationScalar(value arrow.Duration, dataType arrow.DataType) DurationSc
 	}
 }
 
-func (left DurationScalar) Equals(other Scalar) bool {
+func (s DurationScalar) Equals(other Scalar) bool {
 	right, ok := other.(DurationScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left DurationScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s DurationScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s DurationScalar) Value() arrow.Duration {
+	return s.value
+}
+
+func (s DurationScalar) ValueBytes() []byte {
+	b := make([]byte, 8)
+	arrow.DurationTraits.PutValue(b, s.value)
+	return b
 }
 
 type Decimal128Scalar struct {
@@ -677,13 +917,23 @@ func NewDecimal128Scalar(value decimal128.Num, dataType arrow.DataType) Decimal1
 	}
 }
 
-func (left Decimal128Scalar) Equals(other Scalar) bool {
+func (s Decimal128Scalar) Equals(other Scalar) bool {
 	right, ok := other.(Decimal128Scalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left Decimal128Scalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s Decimal128Scalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s Decimal128Scalar) Value() decimal128.Num {
+	return s.value
+}
+
+func (s Decimal128Scalar) ValueBytes() []byte {
+	b := make([]byte, 16)
+	arrow.Decimal128Traits.PutValue(b, s.value)
+	return b
 }
 
 type ListScalar struct {
@@ -703,13 +953,21 @@ func NewListScalar(value array.Interface, dataType arrow.DataType) ListScalar {
 	}
 }
 
-func (left ListScalar) Equals(other Scalar) bool {
+func (s ListScalar) Equals(other Scalar) bool {
 	right, ok := other.(ListScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left ListScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s ListScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s ListScalar) Value() array.Interface {
+	return s.value
+}
+
+func (s ListScalar) ValueBytes() []byte {
+	panic("not implemented")
 }
 
 type largeListScalar struct {
@@ -729,13 +987,21 @@ func NewlargeListScalar(value array.Interface, dataType arrow.DataType) largeLis
 	}
 }
 
-func (left largeListScalar) Equals(other Scalar) bool {
+func (s largeListScalar) Equals(other Scalar) bool {
 	right, ok := other.(largeListScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left largeListScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s largeListScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s largeListScalar) Value() array.Interface {
+	return s.value
+}
+
+func (s largeListScalar) ValueBytes() []byte {
+	panic("not implemented")
 }
 
 type MapScalar struct {
@@ -755,13 +1021,21 @@ func NewMapScalar(value array.Interface, dataType arrow.DataType) MapScalar {
 	}
 }
 
-func (left MapScalar) Equals(other Scalar) bool {
+func (s MapScalar) Equals(other Scalar) bool {
 	right, ok := other.(MapScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left MapScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s MapScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s MapScalar) Value() array.Interface {
+	return s.value
+}
+
+func (s MapScalar) ValueBytes() []byte {
+	panic("not implemented")
 }
 
 type FixedSizeListScalar struct {
@@ -781,13 +1055,21 @@ func NewFixedSizeListScalar(value array.Interface, dataType arrow.DataType) Fixe
 	}
 }
 
-func (left FixedSizeListScalar) Equals(other Scalar) bool {
+func (s FixedSizeListScalar) Equals(other Scalar) bool {
 	right, ok := other.(FixedSizeListScalar)
-	return ok && left.value == right.value
+	return ok && s.value == right.value
 }
 
-func (left FixedSizeListScalar) NotEquals(other Scalar) bool {
-	return !left.Equals(other)
+func (s FixedSizeListScalar) NotEquals(other Scalar) bool {
+	return !s.Equals(other)
+}
+
+func (s FixedSizeListScalar) Value() array.Interface {
+	return s.value
+}
+
+func (s FixedSizeListScalar) ValueBytes() []byte {
+	panic("not implemented")
 }
 
 var (
@@ -800,9 +1082,9 @@ var (
 	_ Scalar = (*Uint16Scalar)(nil)
 	_ Scalar = (*Uint32Scalar)(nil)
 	_ Scalar = (*Uint64Scalar)(nil)
-	_ Scalar = (*HalfFloatScalar)(nil)
-	_ Scalar = (*FloatScalar)(nil)
-	_ Scalar = (*DoubleScalar)(nil)
+	_ Scalar = (*Float16Scalar)(nil)
+	_ Scalar = (*Float32Scalar)(nil)
+	_ Scalar = (*Float64Scalar)(nil)
 	_ Scalar = (*BinaryScalar)(nil)
 	_ Scalar = (*StringScalar)(nil)
 	_ Scalar = (*LargeBinaryScalar)(nil)
