@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/apache/arrow/go/arrow/array"
 	"github.com/apache/arrow/go/arrow/bitutil"
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
@@ -41,25 +40,24 @@ func ComputeStringHash(data interface{}, length int64) hash_t {
 const kSentinel = uint64(0)
 const kLoadFactor = uint64(2)
 
-type entryPayload interface {
-	Bytes() []byte
-	SizeOf() int
+type EntryPayload interface {
+	// io.ReadWriter
 }
 
 type Entry struct {
 	h       hash_t
-	payload entryPayload
+	payload EntryPayload
 }
 
 func (e Entry) bool() bool { return uint64(e.h) != kSentinel }
 
-type CmpFunc func(interface{}) bool
+type HashTableCmpFunc func(EntryPayload) bool
 
 type HashTable interface {
 	// Lookup with non-linear probing
 	// cmp_func should have signature bool(const Payload*).
 	// Return a (Entry*, found) pair.
-	Lookup(h hash_t, cmpFunc CmpFunc) (*Entry, bool)
+	Lookup(h hash_t, cmpFunc HashTableCmpFunc) (*Entry, bool)
 	Insert(entry *Entry, h hash_t, payload Payload)
 	Size() uint64
 }
@@ -79,8 +77,6 @@ type hashTable struct {
 	// The number of used slots in the hash table array.
 	size uint64
 
-	// TODO(nickpoorman): Use Arrow TypedBufferBuilder instead of native array.
-	// entries        []*Entry
 	entriesBuilder entryBufferBuilder
 }
 
@@ -129,7 +125,7 @@ func (ht *hashTable) Upsize(newCapacity uint64) error {
 		if entry != nil {
 			// Dummy compare function will not be called
 			pFirst, pSecond := ht.lookup(HashTable_CompareKind_NoCompare, entry.h, ht.entries(), newMask,
-				func(payload interface{}) bool { return false })
+				func(payload EntryPayload) bool { return false })
 			// Lookup<NoCompare> (and CompareEntry<NoCompare>) ensure that an
 			// empty slots is always returned
 			if pSecond {
@@ -148,13 +144,13 @@ func (ht *hashTable) entries() []*Entry {
 	return ht.entriesBuilder.Values()
 }
 
-func (ht *hashTable) Lookup(h hash_t, cmpFunc CmpFunc) (*Entry, bool) {
-	pFirst, pSecond := ht.lookup(HashTable_CompareKind_DoCompare, h, ht.entries, ht.capacityMask, cmpFunc)
-	return ht.entries[pFirst], pSecond
+func (ht *hashTable) Lookup(h hash_t, cmpFunc HashTableCmpFunc) (*Entry, bool) {
+	pFirst, pSecond := ht.lookup(HashTable_CompareKind_DoCompare, h, ht.entries(), ht.capacityMask, cmpFunc)
+	return ht.entries()[pFirst], pSecond
 }
 
 // The workhorse lookup function
-func (ht *hashTable) lookup(cKind CompareKind, h hash_t, entries []*Entry, sizeMask uint64, cmpFunc CmpFunc) (uint64, bool) {
+func (ht *hashTable) lookup(cKind CompareKind, h hash_t, entries []*Entry, sizeMask uint64, cmpFunc HashTableCmpFunc) (uint64, bool) {
 	const perturbShift uint8 = 5
 
 	var index uint64
@@ -190,19 +186,19 @@ func (*hashTable) fixHash(h hash_t) hash_t {
 	return h
 }
 
-func (*hashTable) CompareEntry(cKind CompareKind, h hash_t, entry *Entry, cmpFunc CmpFunc) bool {
+func (*hashTable) CompareEntry(cKind CompareKind, h hash_t, entry *Entry, cmpFunc HashTableCmpFunc) bool {
 	if cKind == HashTable_CompareKind_NoCompare {
 		return false
 	}
-	return entry.h == h && cmpFunc(entry.Payload)
+	return entry.h == h && cmpFunc(entry.payload)
 }
 
-func (ht *hashTable) Insert(entry *Entry, h hash_t, payload Payload) error {
+func (ht *hashTable) Insert(entry *Entry, h hash_t, payload EntryPayload) error {
 	if entry == nil {
 		return fmt.Errorf("Insert: entry is nil")
 	}
 	entry.h = ht.fixHash(h)
-	entry.Payload = payload
+	entry.payload = payload
 	ht.size++
 
 	if ht.NeedUpsizing() {
@@ -214,8 +210,13 @@ func (ht *hashTable) Insert(entry *Entry, h hash_t, payload Payload) error {
 
 // Visit all non-empty entries in the table
 // The visit_func should have signature func(*Entry)
-func (ht *hashTable) VisitEntries(entry *Entry) {
-
+func (ht *hashTable) VisitEntries(visitFunc func(*Entry)) {
+	for i := uint64(0); i < ht.capacity; i++ {
+		entry := ht.entries()[i]
+		if entry != nil {
+			visitFunc(entry)
+		}
+	}
 }
 
 type ScalarHelperTemplate struct {
@@ -450,61 +451,25 @@ func (s *ScalarMemoTable) CopyValues(start int32, outSize int64, outData []byte)
 }
 
 // Type specific class for a buffer builder to hold Entry structs.
-// type entryBufferBuilder struct {
-// 	// TODO(nickpoorman): Use Arrow TypedBufferBuilder instead of native array.
-// 	// array.BufferBuilder
-// 	entries []*Entry
-// }
-
-// func (b *entryBufferBuilder) Resize(elements int) {
-// 	enteries := make([]*Entry, len(b.entries), elements)
-// 	copy(enteries, b.entries)
-// 	b.entries = enteries
-// }
-
-// // func (b *entryBufferBuilder) AppendValues(v []Entry) {
-// // 	panic("not implemented")
-// // }
-
-// // func (b *entryBufferBuilder) AppendValue(v Entry) {
-// // 	panic("not implemented")
-// // }
-
-// func (b *entryBufferBuilder) Values() []*Entry {
-// 	return b.entries
-// }
-
-// // Reset and return the buffer
-// func (b *entryBufferBuilder) Finish() *memory.Buffer {
-// 	b.entries = make([]*Entry, 0)
-// 	return nil
-// }
-
-// // func (b *entryBufferBuilder) Value(i int) Entry {
-// // 	panic("not implemented")
-// // }
-
-// // func (b *entryBufferBuilder) Len() int {
-// // 	panic("not implemented")
-// // }
-
 type entryBufferBuilder struct {
-	array.BufferBuilder
+	// TODO(nickpoorman): Use Arrow TypedBufferBuilder instead of native array.
+	// array.BufferBuilder
+	entries []*Entry
 }
 
 func (b *entryBufferBuilder) Resize(elements int) {
-	enteries := make([]*Entry, len(b.entries), elements)
+	enteries := make([]*Entry, elements, elements)
 	copy(enteries, b.entries)
 	b.entries = enteries
 }
 
-func (b *entryBufferBuilder) AppendValues(v []Entry) {
-	panic("not implemented")
-}
+// func (b *entryBufferBuilder) AppendValues(v []Entry) {
+// 	panic("not implemented")
+// }
 
-func (b *entryBufferBuilder) AppendValue(v Entry) {
-	panic("not implemented")
-}
+// func (b *entryBufferBuilder) AppendValue(v Entry) {
+// 	panic("not implemented")
+// }
 
 func (b *entryBufferBuilder) Values() []*Entry {
 	return b.entries
@@ -516,10 +481,10 @@ func (b *entryBufferBuilder) Finish() *memory.Buffer {
 	return nil
 }
 
-func (b *entryBufferBuilder) Value(i int) Entry {
-	panic("not implemented")
-}
+// func (b *entryBufferBuilder) Value(i int) Entry {
+// 	panic("not implemented")
+// }
 
-func (b *entryBufferBuilder) Len() int {
-	panic("not implemented")
-}
+// func (b *entryBufferBuilder) Len() int {
+// 	panic("not implemented")
+// }
