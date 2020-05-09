@@ -18,11 +18,23 @@ func ComputeStringHash(data interface{}, length int64) hash_t {
 	}
 }
 
-// The number of entries in the memo table +1 if null was added.
-// (which is also 1 + the largest memo index)
-func (s ScalarMemoTable) size(value Scalar) {
-	return int32(s.hashTable.size()) + (s.GetNull() != kKeyNotFound)
+
+// XXX add a HashEq<ArrowType> struct with both hash and compare functions?
+
+// ----------------------------------------------------------------------
+// An open-addressing insert-only hash table (no deletes)
+type HashTable interface {
+	// Lookup with non-linear probing
+	// cmp_func should have signature bool(const Payload*).
+	// Return a (Entry*, found) pair.
+	Lookup(h hash_t, cmpFunc CmpFunc) (Entry, bool)
+	Insert(entry Entry, h hash_t, payload Payload) 
 }
+
+type hashTable struct {
+
+}
+
 
 type ScalarHelperTemplate struct {
 	Scalar
@@ -162,6 +174,11 @@ func isFloatingPoint(value interface{}) bool {
 
 type SCALAR_TYPE_PLACEHOLDER interface{}
 
+const kKeyNotFound = -1
+
+func OnFoundNoOp(memoIndex int32)    {}
+func OnNotFoundNoOp(memoIndex int32) {}
+
 // ----------------------------------------------------------------------
 // A base class for memoization table.
 
@@ -170,11 +187,6 @@ type MemoTable interface {
 	GetOrInsert(value interface{}, onFound func(memoIndex int32), onNotFound func(memoIndex int32), outMemoIndex *int32) error
 	CopyValues(start int32, outSize int64, outData []byte)
 }
-
-func OnFoundNoOp(memoIndex int32)    {}
-func OnNotFoundNoOp(memoIndex int32) {}
-
-const kKeyNotFound = -1
 
 // ----------------------------------------------------------------------
 // A memoization table for memory-cheap scalar values.
@@ -198,6 +210,12 @@ func NewScalarMemoTable() *ScalarMemoTable {
 	}
 }
 
+// The number of entries in the memo table +1 if null was added.
+// (which is also 1 + the largest memo index)
+func (s ScalarMemoTable) size(value Scalar) {
+	return int32(s.hashTable.size()) + (s.GetNull() != kKeyNotFound)
+}
+
 func (ScalarMemoTable) Get(value Scalar) int32 {
 	cmpFunc := func(payload *Payload) bool {
 		return NewScalarHelperSCALAR_TYPE_PLACEHOLDER().CompareScalars(payload.value, value)
@@ -211,7 +229,7 @@ func (ScalarMemoTable) Get(value Scalar) int32 {
 	}
 }
 
-func (s ScalarMemoTable) GetOrInsert(value Scalar, onFound Func1, onNotFound Func2, outMemoIndex int32) error {
+func (s *ScalarMemoTable) GetOrInsert(value Scalar, onFound Func1, onNotFound Func2, outMemoIndex int32) error {
 	cmpFunc := func(payload *Payload) bool {
 		return NewScalarHelperSCALAR_TYPE_PLACEHOLDER().CompareScalars(value, payload.value)
 	}
@@ -228,10 +246,21 @@ func (s ScalarMemoTable) GetOrInsert(value Scalar, onFound Func1, onNotFound Fun
 	return memoIndex
 }
 
-func (s ScalarMemoTable) GetNull() int32 {
+func (s *ScalarMemoTable) GetNull() int32 {
 	return s.nullIndex
 }
 
 func (ScalarMemoTable) ComputeHash(value Scalar) hash_t {
 	return NewScalarHelperSCALAR_TYPE_PLACEHOLDER().ComputeHash(value)
+}
+
+// Copy values starting from index `start` into `outData`.
+// Check the size in debug mode.
+func (s *ScalarMemoTable) CopyValues(start int32, outSize int64, outData []byte) {
+	s.hashTable.VisitEntries(func (entry *HashTableEntry) {
+		index := entry.payload.memoIndex - start
+		if index >= 0 {
+			outData[index] = entry.payload.value
+		}
+	})
 }
