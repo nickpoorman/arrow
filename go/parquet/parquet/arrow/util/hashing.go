@@ -40,25 +40,23 @@ func ComputeStringHash(data interface{}, length int64) hash_t {
 const kSentinel = uint64(0)
 const kLoadFactor = uint64(2)
 
-type HashTableEntryPayload interface {
-	// io.ReadWriter
-}
+// type interface{} interface{}
 
 type HashTableEntry struct {
 	h       hash_t
-	payload HashTableEntryPayload
+	payload interface{}
 }
 
 func (e HashTableEntry) bool() bool { return uint64(e.h) != kSentinel }
 
-type HashTableCmpFunc func(HashTableEntryPayload) bool
+type HashTableCmpFunc func(interface{}) bool
 
 type HashTable interface {
 	// Lookup with non-linear probing
 	// cmp_func should have signature bool(const Payload*).
 	// Return a (Entry*, found) pair.
 	Lookup(h hash_t, cmpFunc HashTableCmpFunc) (*HashTableEntry, bool)
-	Insert(entry *HashTableEntry, h hash_t, payload Payload)
+	Insert(entry *HashTableEntry, h hash_t, payload interface{}) error
 	Size() uint64
 	VisitEntries(visitFunc func(*HashTableEntry))
 }
@@ -126,7 +124,7 @@ func (ht *hashTable) Upsize(newCapacity uint64) error {
 		if entry != nil {
 			// Dummy compare function will not be called
 			pFirst, pSecond := ht.lookup(HashTable_CompareKind_NoCompare, entry.h, ht.entries(), newMask,
-				func(payload HashTableEntryPayload) bool { return false })
+				func(payload interface{}) bool { return false })
 			// Lookup<NoCompare> (and CompareEntry<NoCompare>) ensure that an
 			// empty slots is always returned
 			if pSecond {
@@ -194,7 +192,7 @@ func (*hashTable) CompareEntry(cKind CompareKind, h hash_t, entry *HashTableEntr
 	return entry.h == h && cmpFunc(entry.payload)
 }
 
-func (ht *hashTable) Insert(entry *HashTableEntry, h hash_t, payload HashTableEntryPayload) error {
+func (ht *hashTable) Insert(entry *HashTableEntry, h hash_t, payload interface{}) error {
 	if entry == nil {
 		return fmt.Errorf("Insert: entry is nil")
 	}
@@ -408,6 +406,13 @@ type scalarPayload struct {
 	memoIndex int32
 }
 
+func newScalarPayload(value Scalar, memoIndex int32) *scalarPayload {
+	return &scalarPayload{
+		value:     value,
+		memoIndex: memoIndex,
+	}
+}
+
 type ScalarMemoTable struct {
 	hashTable HashTable
 	nullIndex int32 // default: kKeyNotFound
@@ -421,42 +426,48 @@ func NewScalarMemoTable() *ScalarMemoTable {
 
 // The number of entries in the memo table +1 if null was added.
 // (which is also 1 + the largest memo index)
-func (s ScalarMemoTable) size(value Scalar) int {
-	nullAdded := 0
+func (s ScalarMemoTable) size() int32 {
+	nullAdded := int32(0)
 	if s.GetNull() != kKeyNotFound {
 		nullAdded = 1
 	}
-	return int(s.hashTable.Size()) + nullAdded
+	return int32(s.hashTable.Size()) + nullAdded
 }
 
-func (ScalarMemoTable) Get(value Scalar) int32 {
-	cmpFunc := func(payload *Payload) bool {
-		return NewScalarHelperSCALAR_TYPE_PLACEHOLDER().CompareScalars(payload.value, value)
+func (s *ScalarMemoTable) Get(value Scalar) int32 {
+	cmpFunc := func(payload interface{}) bool {
+		return NewScalarHelperSCALAR_TYPE_PLACEHOLDER().
+			CompareScalars(payload.(*scalarPayload).value, value)
 	}
-	h := ComputeHash(value)
-	payload, ok := hashTable.Lookup(h, cmpFunc)
+	h := s.ComputeHash(value)
+	hashTableEntry, ok := s.hashTable.Lookup(h, cmpFunc)
 	if ok {
-		return payload.memoIndex
+		return hashTableEntry.payload.(*scalarPayload).memoIndex
 	} else {
 		return kKeyNotFound
 	}
 }
 
-func (s *ScalarMemoTable) GetOrInsert(value Scalar, onFound Func1, onNotFound Func2, outMemoIndex int32) error {
-	cmpFunc := func(payload *Payload) bool {
-		return NewScalarHelperSCALAR_TYPE_PLACEHOLDER().CompareScalars(value, payload.value)
+func (s *ScalarMemoTable) GetOrInsert(value Scalar, onFound Func1, onNotFound Func2, outMemoIndex int32) (int32, error) {
+	cmpFunc := func(payload interface{}) bool {
+		return NewScalarHelperSCALAR_TYPE_PLACEHOLDER().
+			CompareScalars(value, payload.(*scalarPayload).value)
 	}
-	h := ComputeHash(value)
-	payload, ok := s.hashTable.Lookup(h, cmpFunc)
+	h := s.ComputeHash(value)
+	hashTableEntry, ok := s.hashTable.Lookup(h, cmpFunc)
 	var memoIndex int32
 	if ok {
-		memoIndex = payload.memoIndex
+		memoIndex = hashTableEntry.payload.(*scalarPayload).memoIndex
 		onFound(memoIndex)
 	} else {
-		memoIndex = size()
+		memoIndex = s.size()
+		if err := s.hashTable.Insert(
+			hashTableEntry, h, newScalarPayload(value, memoIndex)); err != nil {
+			return memoIndex, err
+		}
 		onNotFound(memoIndex)
 	}
-	return memoIndex
+	return memoIndex, nil
 }
 
 func (s *ScalarMemoTable) GetNull() int32 {
