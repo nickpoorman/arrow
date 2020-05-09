@@ -41,8 +41,8 @@
 #include "arrow/util/formatting.h"
 #include "arrow/util/key_value_metadata.h"
 #include "arrow/util/logging.h"
-#include "arrow/util/parsing.h"
 #include "arrow/util/string.h"
+#include "arrow/util/value_parsing.h"
 #include "arrow/visitor_inline.h"
 
 namespace arrow {
@@ -58,6 +58,7 @@ constexpr char kYearMonth[] = "YEAR_MONTH";
 class MemoryPool;
 
 using internal::checked_cast;
+using internal::ParseValue;
 
 namespace ipc {
 namespace internal {
@@ -113,25 +114,36 @@ class SchemaWriter {
     return Status::OK();
   }
 
-  void WriteKeyValueMetadata(const std::shared_ptr<const KeyValueMetadata>& metadata) {
-    if (metadata == nullptr || metadata->size() == 0) {
+  void WriteKeyValueMetadata(
+      const std::shared_ptr<const KeyValueMetadata>& metadata,
+      const std::vector<std::pair<std::string, std::string>>& additional_metadata = {}) {
+    if ((metadata == nullptr || metadata->size() == 0) && additional_metadata.empty()) {
       return;
     }
     writer_->Key("metadata");
 
     writer_->StartArray();
-    for (int64_t i = 0; i < metadata->size(); ++i) {
-      writer_->StartObject();
-
-      writer_->Key("key");
-      writer_->String(metadata->key(i).c_str());
-
-      writer_->Key("value");
-      writer_->String(metadata->value(i).c_str());
-
-      writer_->EndObject();
+    if (metadata != nullptr) {
+      for (int64_t i = 0; i < metadata->size(); ++i) {
+        WriteKeyValue(metadata->key(i), metadata->value(i));
+      }
+    }
+    for (const auto& kv : additional_metadata) {
+      WriteKeyValue(kv.first, kv.second);
     }
     writer_->EndArray();
+  }
+
+  void WriteKeyValue(const std::string& key, const std::string& value) {
+    writer_->StartObject();
+
+    writer_->Key("key");
+    writer_->String(key.c_str());
+
+    writer_->Key("value");
+    writer_->String(value.c_str());
+
+    writer_->EndObject();
   }
 
   Status WriteDictionaryMetadata(int64_t id, const DictionaryType& type) {
@@ -163,25 +175,32 @@ class SchemaWriter {
     writer_->Key("nullable");
     writer_->Bool(field->nullable());
 
-    const DataType& type = *field->type();
+    const DataType* type = field->type().get();
+    std::vector<std::pair<std::string, std::string>> additional_metadata;
+    if (type->id() == Type::EXTENSION) {
+      const auto& ext_type = checked_cast<const ExtensionType&>(*type);
+      type = ext_type.storage_type().get();
+      additional_metadata.emplace_back(kExtensionTypeKeyName, ext_type.extension_name());
+      additional_metadata.emplace_back(kExtensionMetadataKeyName, ext_type.Serialize());
+    }
 
     // Visit the type
     writer_->Key("type");
     writer_->StartObject();
-    RETURN_NOT_OK(VisitType(type));
+    RETURN_NOT_OK(VisitType(*type));
     writer_->EndObject();
 
-    if (type.id() == Type::DICTIONARY) {
-      const auto& dict_type = checked_cast<const DictionaryType&>(type);
+    if (type->id() == Type::DICTIONARY) {
+      const auto& dict_type = checked_cast<const DictionaryType&>(*type);
       int64_t dictionary_id = -1;
       RETURN_NOT_OK(dictionary_memo_->GetOrAssignId(field, &dictionary_id));
       RETURN_NOT_OK(WriteDictionaryMetadata(dictionary_id, dict_type));
       RETURN_NOT_OK(WriteChildren(dict_type.value_type()->children()));
     } else {
-      RETURN_NOT_OK(WriteChildren(type.children()));
+      RETURN_NOT_OK(WriteChildren(type->children()));
     }
 
-    WriteKeyValueMetadata(field->metadata());
+    WriteKeyValueMetadata(field->metadata(), additional_metadata);
     writer_->EndObject();
 
     return Status::OK();
@@ -645,9 +664,7 @@ class ArrayWriter {
     return WriteChildren(type.children(), children);
   }
 
-  Status Visit(const ExtensionArray& array) {
-    return Status::NotImplemented("extension array");
-  }
+  Status Visit(const ExtensionArray& array) { return VisitArrayValues(*array.storage()); }
 
  private:
   const std::string& name_;
@@ -1083,22 +1100,47 @@ static Status GetField(const rj::Value& obj, DictionaryMemo* dictionary_memo,
   std::shared_ptr<KeyValueMetadata> metadata;
   RETURN_NOT_OK(GetKeyValueMetadata(json_field, &metadata));
 
+  // Is it a dictionary type?
+  int64_t dictionary_id = -1;
   const auto& it_dictionary = json_field.FindMember("dictionary");
   if (dictionary_memo != nullptr && it_dictionary != json_field.MemberEnd()) {
     // Parse dictionary id in JSON and add dictionary field to the
     // memo, and parse the dictionaries later
     RETURN_NOT_OBJECT("dictionary", it_dictionary, json_field);
-    int64_t dictionary_id = -1;
     bool is_ordered;
     std::shared_ptr<DataType> index_type;
     RETURN_NOT_OK(ParseDictionary(it_dictionary->value.GetObject(), &dictionary_id,
                                   &is_ordered, &index_type));
 
     type = ::arrow::dictionary(index_type, type, is_ordered);
-    *field = ::arrow::field(name, type, nullable, metadata);
+  }
+
+  // Is it an extension type?
+  int ext_name_index = metadata->FindKey(kExtensionTypeKeyName);
+  if (ext_name_index != -1) {
+    const auto& ext_name = metadata->value(ext_name_index);
+    ARROW_ASSIGN_OR_RAISE(auto ext_data, metadata->Get(kExtensionMetadataKeyName));
+
+    auto ext_type = GetExtensionType(ext_name);
+    if (ext_type == nullptr) {
+      // Some integration tests check that unregistered extensions pass through
+      auto maybe_value = metadata->Get("ARROW:integration:allow_unregistered_extension");
+      if (!maybe_value.ok() || *maybe_value != "true") {
+        return Status::KeyError("Extension type '", ext_name, "' not found");
+      }
+    } else {
+      ARROW_ASSIGN_OR_RAISE(type, ext_type->Deserialize(type, ext_data));
+
+      // Remove extension type metadata, for exact roundtripping
+      RETURN_NOT_OK(metadata->Delete(kExtensionTypeKeyName));
+      RETURN_NOT_OK(metadata->Delete(kExtensionMetadataKeyName));
+    }
+  }
+
+  // Create field
+  *field = ::arrow::field(name, type, nullable, metadata);
+  if (dictionary_id != -1) {
     RETURN_NOT_OK(dictionary_memo->AddField(dictionary_id, *field));
-  } else {
-    *field = ::arrow::field(name, type, nullable, metadata);
   }
 
   return Status::OK();
@@ -1139,7 +1181,8 @@ class ArrayReader {
         pool_(pool),
         field_(field),
         type_(field->type()),
-        dictionary_memo_(dictionary_memo) {}
+        dictionary_memo_(dictionary_memo),
+        dictionary_id_(-1) {}
 
   template <typename T>
   enable_if_has_c_type<T, Status> Visit(const T& type) {
@@ -1309,6 +1352,7 @@ class ArrayReader {
   template <typename T>
   Status GetIntArray(const RjArray& json_array, const int32_t length,
                      std::shared_ptr<Buffer>* out) {
+    using ArrowType = typename CTypeTraits<T>::ArrowType;
     ARROW_ASSIGN_OR_RAISE(auto buffer, AllocateBuffer(length * sizeof(T), pool_));
 
     T* values = reinterpret_cast<T*>(buffer->mutable_data());
@@ -1325,11 +1369,11 @@ class ArrayReader {
     } else {
       // Read 64-bit integers as strings, as JSON numbers cannot represent
       // them exactly.
-      ::arrow::internal::StringConverter<typename CTypeTraits<T>::ArrowType> converter;
+
       for (int i = 0; i < length; ++i) {
         const rj::Value& val = json_array[i];
         DCHECK(val.IsString());
-        if (!converter(val.GetString(), val.GetStringLength(), &values[i])) {
+        if (!ParseValue<ArrowType>(val.GetString(), val.GetStringLength(), &values[i])) {
           return Status::Invalid("Failed to parse integer: '",
                                  std::string(val.GetString(), val.GetStringLength()),
                                  "'");
@@ -1455,18 +1499,30 @@ class ArrayReader {
                        dictionary_memo_);
     RETURN_NOT_OK(parser.Parse(&indices));
 
-    // Look up dictionary
-    int64_t dictionary_id = -1;
-    RETURN_NOT_OK(dictionary_memo_->GetId(field_.get(), &dictionary_id));
-
+    RETURN_NOT_OK(LookupDictionaryId(field_));
     std::shared_ptr<Array> dictionary;
-    RETURN_NOT_OK(dictionary_memo_->GetDictionary(dictionary_id, &dictionary));
+    RETURN_NOT_OK(dictionary_memo_->GetDictionary(dictionary_id_, &dictionary));
 
     result_ = std::make_shared<DictionaryArray>(field_->type(), indices, dictionary);
     return Status::OK();
   }
 
-  Status Visit(const ExtensionType& type) { return Status::NotImplemented(type.name()); }
+  Status Visit(const ExtensionType& type) {
+    std::shared_ptr<Array> storage_array;
+
+    ArrayReader parser(obj_, pool_, field_->WithType(type.storage_type()),
+                       dictionary_memo_);
+    // If the storage array is a dictionary array, lookup its dictionary id
+    // using the extension field.
+    // (the field is looked up by pointer, so the Field instance constructed
+    //  above wouldn't work)
+    if (parser.type_->id() == Type::DICTIONARY) {
+      RETURN_NOT_OK(parser.LookupDictionaryId(field_));
+    }
+    RETURN_NOT_OK(parser.Parse(&storage_array));
+    result_ = std::make_shared<ExtensionArray>(type_, storage_array);
+    return Status::OK();
+  }
 
   Status GetValidityBuffer(const std::vector<bool>& is_valid, int32_t* null_count,
                            std::shared_ptr<Buffer>* validity_buffer) {
@@ -1544,12 +1600,20 @@ class ArrayReader {
     return Status::OK();
   }
 
+  Status LookupDictionaryId(const std::shared_ptr<Field>& field) {
+    if (dictionary_id_ == -1) {
+      RETURN_NOT_OK(dictionary_memo_->GetId(field.get(), &dictionary_id_));
+    }
+    return Status::OK();
+  }
+
  private:
   const RjObject& obj_;
   MemoryPool* pool_;
-  const std::shared_ptr<Field>& field_;
+  std::shared_ptr<Field> field_;
   std::shared_ptr<DataType> type_;
   DictionaryMemo* dictionary_memo_;
+  int64_t dictionary_id_;
 
   // Parsed common attributes
   std::vector<bool> is_valid_;

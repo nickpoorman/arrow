@@ -21,40 +21,50 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <string>
 #include <type_traits>
 
 #include "arrow/type.h"
-#include "arrow/type_traits.h"
 #include "arrow/util/checked_cast.h"
-#include "arrow/util/config.h"
+#include "arrow/util/macros.h"
+#include "arrow/util/visibility.h"
 #include "arrow/vendored/datetime.h"
+#include "arrow/vendored/strptime.h"
 
 namespace arrow {
+
+/// \brief A virtual string to timestamp parser
+class ARROW_EXPORT TimestampParser {
+ public:
+  virtual ~TimestampParser() = default;
+
+  virtual bool operator()(const char* s, size_t length, TimeUnit::type out_unit,
+                          int64_t* out) const = 0;
+
+  /// \brief Create a TimestampParser that recognizes strptime-like format strings
+  static std::shared_ptr<TimestampParser> MakeStrptime(std::string format);
+
+  /// \brief Create a TimestampParser that recognizes (locale-agnostic) ISO8601
+  /// timestamps
+  static std::shared_ptr<TimestampParser> MakeISO8601();
+};
+
 namespace internal {
 
-/// \brief A class providing conversion from strings to some Arrow data types
-///
-/// Conversion is triggered by calling operator().  It returns true on
-/// success, false on failure.
-///
-/// The class may have a non-trivial construction cost in some cases,
-/// so it's recommended to use a single instance many times, if doing bulk
-/// conversion. Instances of this class are not guaranteed to be thread-safe.
-///
+namespace detail {
+
 template <typename ARROW_TYPE, typename Enable = void>
-class StringConverter;
+struct StringConverter;
 
 template <>
-class StringConverter<BooleanType> {
- public:
-  explicit StringConverter(const std::shared_ptr<DataType>& = NULLPTR) {}
-
+struct StringConverter<BooleanType> {
   using value_type = bool;
 
-  bool operator()(const char* s, size_t length, value_type* out) {
+  static bool Convert(const char* s, size_t length, value_type* out) {
     if (length == 1) {
       // "0" or "1"?
       if (s[0] == '0') {
@@ -89,44 +99,31 @@ class StringConverter<BooleanType> {
 // - https://github.com/google/double-conversion [used here]
 // - https://github.com/achan001/dtoa-fast
 
-class ARROW_EXPORT StringToFloatConverter {
- public:
-  StringToFloatConverter();
-  ~StringToFloatConverter();
+ARROW_EXPORT
+bool StringToFloat(const char* s, size_t length, float* out);
 
-  bool StringToFloat(const char* s, size_t length, float* out);
-  bool StringToFloat(const char* s, size_t length, double* out);
+ARROW_EXPORT
+bool StringToFloat(const char* s, size_t length, double* out);
 
- protected:
-  struct Impl;
-  std::unique_ptr<Impl> impl_;
-};
+template <>
+struct StringConverter<FloatType> {
+  using value_type = float;
 
-template <class ARROW_TYPE>
-class StringToFloatConverterMixin : public StringToFloatConverter {
- public:
-  using value_type = typename ARROW_TYPE::c_type;
-
-  explicit StringToFloatConverterMixin(const std::shared_ptr<DataType>& = NULLPTR) {}
-
-  bool operator()(const char* s, size_t length, value_type* out) {
+  static bool Convert(const char* s, size_t length, value_type* out) {
     return ARROW_PREDICT_TRUE(StringToFloat(s, length, out));
   }
 };
 
 template <>
-class StringConverter<FloatType> : public StringToFloatConverterMixin<FloatType> {
-  using StringToFloatConverterMixin<FloatType>::StringToFloatConverterMixin;
-};
+struct StringConverter<DoubleType> {
+  using value_type = double;
 
-template <>
-class StringConverter<DoubleType> : public StringToFloatConverterMixin<DoubleType> {
-  using StringToFloatConverterMixin<DoubleType>::StringToFloatConverterMixin;
+  static bool Convert(const char* s, size_t length, value_type* out) {
+    return ARROW_PREDICT_TRUE(StringToFloat(s, length, out));
+  }
 };
 
 // NOTE: HalfFloatType would require a half<->float conversion library
-
-namespace detail {
 
 inline uint8_t ParseDecimalDigit(char c) { return static_cast<uint8_t>(c - '0'); }
 
@@ -241,17 +238,11 @@ inline bool ParseUnsigned(const char* s, size_t length, uint64_t* out) {
 #undef PARSE_UNSIGNED_ITERATION
 #undef PARSE_UNSIGNED_ITERATION_LAST
 
-}  // namespace detail
-
 template <class ARROW_TYPE>
-class StringToUnsignedIntConverterMixin {
- public:
+struct StringToUnsignedIntConverterMixin {
   using value_type = typename ARROW_TYPE::c_type;
 
-  explicit StringToUnsignedIntConverterMixin(const std::shared_ptr<DataType>& = NULLPTR) {
-  }
-
-  bool operator()(const char* s, size_t length, value_type* out) {
+  static bool Convert(const char* s, size_t length, value_type* out) {
     if (ARROW_PREDICT_FALSE(length == 0)) {
       return false;
     }
@@ -260,39 +251,39 @@ class StringToUnsignedIntConverterMixin {
       length--;
       s++;
     }
-    return detail::ParseUnsigned(s, length, out);
+    return ParseUnsigned(s, length, out);
   }
 };
 
 template <>
-class StringConverter<UInt8Type> : public StringToUnsignedIntConverterMixin<UInt8Type> {
+struct StringConverter<UInt8Type> : public StringToUnsignedIntConverterMixin<UInt8Type> {
   using StringToUnsignedIntConverterMixin<UInt8Type>::StringToUnsignedIntConverterMixin;
 };
 
 template <>
-class StringConverter<UInt16Type> : public StringToUnsignedIntConverterMixin<UInt16Type> {
+struct StringConverter<UInt16Type>
+    : public StringToUnsignedIntConverterMixin<UInt16Type> {
   using StringToUnsignedIntConverterMixin<UInt16Type>::StringToUnsignedIntConverterMixin;
 };
 
 template <>
-class StringConverter<UInt32Type> : public StringToUnsignedIntConverterMixin<UInt32Type> {
+struct StringConverter<UInt32Type>
+    : public StringToUnsignedIntConverterMixin<UInt32Type> {
   using StringToUnsignedIntConverterMixin<UInt32Type>::StringToUnsignedIntConverterMixin;
 };
 
 template <>
-class StringConverter<UInt64Type> : public StringToUnsignedIntConverterMixin<UInt64Type> {
+struct StringConverter<UInt64Type>
+    : public StringToUnsignedIntConverterMixin<UInt64Type> {
   using StringToUnsignedIntConverterMixin<UInt64Type>::StringToUnsignedIntConverterMixin;
 };
 
 template <class ARROW_TYPE>
-class StringToSignedIntConverterMixin {
- public:
+struct StringToSignedIntConverterMixin {
   using value_type = typename ARROW_TYPE::c_type;
   using unsigned_type = typename std::make_unsigned<value_type>::type;
 
-  explicit StringToSignedIntConverterMixin(const std::shared_ptr<DataType>& = NULLPTR) {}
-
-  bool operator()(const char* s, size_t length, value_type* out) {
+  static bool Convert(const char* s, size_t length, value_type* out) {
     static constexpr unsigned_type max_positive =
         static_cast<unsigned_type>(std::numeric_limits<value_type>::max());
     // Assuming two's complement
@@ -315,7 +306,7 @@ class StringToSignedIntConverterMixin {
       length--;
       s++;
     }
-    if (!ARROW_PREDICT_TRUE(detail::ParseUnsigned(s, length, &unsigned_value))) {
+    if (!ARROW_PREDICT_TRUE(ParseUnsigned(s, length, &unsigned_value))) {
       return false;
     }
     if (negative) {
@@ -337,198 +328,249 @@ class StringToSignedIntConverterMixin {
 };
 
 template <>
-class StringConverter<Int8Type> : public StringToSignedIntConverterMixin<Int8Type> {
+struct StringConverter<Int8Type> : public StringToSignedIntConverterMixin<Int8Type> {
   using StringToSignedIntConverterMixin<Int8Type>::StringToSignedIntConverterMixin;
 };
 
 template <>
-class StringConverter<Int16Type> : public StringToSignedIntConverterMixin<Int16Type> {
+struct StringConverter<Int16Type> : public StringToSignedIntConverterMixin<Int16Type> {
   using StringToSignedIntConverterMixin<Int16Type>::StringToSignedIntConverterMixin;
 };
 
 template <>
-class StringConverter<Int32Type> : public StringToSignedIntConverterMixin<Int32Type> {
+struct StringConverter<Int32Type> : public StringToSignedIntConverterMixin<Int32Type> {
   using StringToSignedIntConverterMixin<Int32Type>::StringToSignedIntConverterMixin;
 };
 
 template <>
-class StringConverter<Int64Type> : public StringToSignedIntConverterMixin<Int64Type> {
+struct StringConverter<Int64Type> : public StringToSignedIntConverterMixin<Int64Type> {
   using StringToSignedIntConverterMixin<Int64Type>::StringToSignedIntConverterMixin;
 };
 
-template <>
-class StringConverter<TimestampType> {
- public:
-  using value_type = TimestampType::c_type;
+// Inline-able ISO-8601 parser
 
-  explicit StringConverter(const std::shared_ptr<DataType>& type)
-      : unit_(checked_cast<TimestampType*>(type.get())->unit()) {}
+using ts_type = TimestampType::c_type;
 
-  bool operator()(const char* s, size_t length, value_type* out) {
-    // We allow the following formats:
-    // - "YYYY-MM-DD"
-    // - "YYYY-MM-DD[ T]hh"
-    // - "YYYY-MM-DD[ T]hhZ"
-    // - "YYYY-MM-DD[ T]hh:mm"
-    // - "YYYY-MM-DD[ T]hh:mmZ"
-    // - "YYYY-MM-DD[ T]hh:mm:ss"
-    // - "YYYY-MM-DD[ T]hh:mm:ssZ"
-    // UTC is always assumed, and the DataType's timezone is ignored.
-    arrow_vendored::date::year_month_day ymd;
-    if (ARROW_PREDICT_FALSE(length < 10)) {
-      return false;
-    }
-    if (length == 10) {
-      if (ARROW_PREDICT_FALSE(!ParseYYYY_MM_DD(s, &ymd))) {
-        return false;
-      }
-      return ConvertTimePoint(arrow_vendored::date::sys_days(ymd), out);
-    }
-    if (ARROW_PREDICT_FALSE(s[10] != ' ') && ARROW_PREDICT_FALSE(s[10] != 'T')) {
-      return false;
-    }
-    if (s[length - 1] == 'Z') {
-      --length;
-    }
-    if (length == 13) {
-      if (ARROW_PREDICT_FALSE(!ParseYYYY_MM_DD(s, &ymd))) {
-        return false;
-      }
-      std::chrono::duration<value_type> seconds;
-      if (ARROW_PREDICT_FALSE(!ParseHH(s + 11, &seconds))) {
-        return false;
-      }
-      return ConvertTimePoint(arrow_vendored::date::sys_days(ymd) + seconds, out);
-    }
-    if (length == 16) {
-      if (ARROW_PREDICT_FALSE(!ParseYYYY_MM_DD(s, &ymd))) {
-        return false;
-      }
-      std::chrono::duration<value_type> seconds;
-      if (ARROW_PREDICT_FALSE(!ParseHH_MM(s + 11, &seconds))) {
-        return false;
-      }
-      return ConvertTimePoint(arrow_vendored::date::sys_days(ymd) + seconds, out);
-    }
-    if (length == 19) {
-      if (ARROW_PREDICT_FALSE(!ParseYYYY_MM_DD(s, &ymd))) {
-        return false;
-      }
-      std::chrono::duration<value_type> seconds;
-      if (ARROW_PREDICT_FALSE(!ParseHH_MM_SS(s + 11, &seconds))) {
-        return false;
-      }
-      return ConvertTimePoint(arrow_vendored::date::sys_days(ymd) + seconds, out);
-    }
+template <class TimePoint>
+static inline ts_type ConvertTimePoint(TimePoint tp, TimeUnit::type unit) {
+  auto duration = tp.time_since_epoch();
+  switch (unit) {
+    case TimeUnit::SECOND:
+      return std::chrono::duration_cast<std::chrono::seconds>(duration).count();
+    case TimeUnit::MILLI:
+      return std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+    case TimeUnit::MICRO:
+      return std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+    case TimeUnit::NANO:
+      return std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
+    default:
+      // Compiler errors without default case even though all enum cases are handled
+      assert(0);
+      return 0;
+  }
+}
+
+static inline bool ParseYYYY_MM_DD(const char* s,
+                                   arrow_vendored::date::year_month_day* out) {
+  uint16_t year;
+  uint8_t month, day;
+  if (ARROW_PREDICT_FALSE(s[4] != '-') || ARROW_PREDICT_FALSE(s[7] != '-')) {
     return false;
   }
+  if (ARROW_PREDICT_FALSE(!ParseUnsigned(s + 0, 4, &year))) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(!ParseUnsigned(s + 5, 2, &month))) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(!ParseUnsigned(s + 8, 2, &day))) {
+    return false;
+  }
+  *out = {arrow_vendored::date::year{year}, arrow_vendored::date::month{month},
+          arrow_vendored::date::day{day}};
+  return out->ok();
+}
 
- protected:
-  template <class TimePoint>
-  bool ConvertTimePoint(TimePoint tp, value_type* out) {
-    auto duration = tp.time_since_epoch();
-    switch (unit_) {
-      case TimeUnit::SECOND:
-        *out = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-        return true;
-      case TimeUnit::MILLI:
-        *out = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-        return true;
-      case TimeUnit::MICRO:
-        *out = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
-        return true;
-      case TimeUnit::NANO:
-        *out = std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count();
-        return true;
+static inline bool ParseHH(const char* s, std::chrono::duration<ts_type>* out) {
+  uint8_t hours;
+  if (ARROW_PREDICT_FALSE(!ParseUnsigned(s + 0, 2, &hours))) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(hours >= 24)) {
+    return false;
+  }
+  *out = std::chrono::duration<ts_type>(3600U * hours);
+  return true;
+}
+
+static inline bool ParseHH_MM(const char* s, std::chrono::duration<ts_type>* out) {
+  uint8_t hours, minutes;
+  if (ARROW_PREDICT_FALSE(s[2] != ':')) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(!ParseUnsigned(s + 0, 2, &hours))) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(!ParseUnsigned(s + 3, 2, &minutes))) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(hours >= 24)) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(minutes >= 60)) {
+    return false;
+  }
+  *out = std::chrono::duration<ts_type>(3600U * hours + 60U * minutes);
+  return true;
+}
+
+static inline bool ParseHH_MM_SS(const char* s, std::chrono::duration<ts_type>* out) {
+  uint8_t hours, minutes, seconds;
+  if (ARROW_PREDICT_FALSE(s[2] != ':') || ARROW_PREDICT_FALSE(s[5] != ':')) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(!ParseUnsigned(s + 0, 2, &hours))) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(!ParseUnsigned(s + 3, 2, &minutes))) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(!ParseUnsigned(s + 6, 2, &seconds))) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(hours >= 24)) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(minutes >= 60)) {
+    return false;
+  }
+  if (ARROW_PREDICT_FALSE(seconds >= 60)) {
+    return false;
+  }
+  *out = std::chrono::duration<ts_type>(3600U * hours + 60U * minutes + seconds);
+  return true;
+}
+
+}  // namespace detail
+
+/// \brief Attempt to convert a string to the primitive type corresponding to
+/// an Arrow data type
+template <typename T, typename ParseContext = void>
+inline bool ParseValue(const char* s, size_t length, typename T::c_type* out,
+                       const ParseContext* ctx = NULLPTR) {
+  return detail::StringConverter<T>::Convert(s, length, out);
+}
+
+static inline bool ParseTimestampISO8601(const char* s, size_t length,
+                                         TimeUnit::type unit,
+                                         TimestampType::c_type* out) {
+  using ts_type = TimestampType::c_type;
+
+  // We allow the following formats:
+  // - "YYYY-MM-DD"
+  // - "YYYY-MM-DD[ T]hh"
+  // - "YYYY-MM-DD[ T]hhZ"
+  // - "YYYY-MM-DD[ T]hh:mm"
+  // - "YYYY-MM-DD[ T]hh:mmZ"
+  // - "YYYY-MM-DD[ T]hh:mm:ss"
+  // - "YYYY-MM-DD[ T]hh:mm:ssZ"
+  // UTC is always assumed, and the DataType's timezone is ignored.
+  arrow_vendored::date::year_month_day ymd;
+  if (ARROW_PREDICT_FALSE(length < 10)) {
+    return false;
+  }
+  if (length == 10) {
+    if (ARROW_PREDICT_FALSE(!detail::ParseYYYY_MM_DD(s, &ymd))) {
+      return false;
     }
-    // Unreachable, but suppress compiler warning
-    assert(0);
-    *out = 0;
+    *out = detail::ConvertTimePoint(arrow_vendored::date::sys_days(ymd), unit);
     return true;
   }
-
-  bool ParseYYYY_MM_DD(const char* s, arrow_vendored::date::year_month_day* out) {
-    uint16_t year;
-    uint8_t month, day;
-    if (ARROW_PREDICT_FALSE(s[4] != '-') || ARROW_PREDICT_FALSE(s[7] != '-')) {
-      return false;
-    }
-    if (ARROW_PREDICT_FALSE(!detail::ParseUnsigned(s + 0, 4, &year))) {
-      return false;
-    }
-    if (ARROW_PREDICT_FALSE(!detail::ParseUnsigned(s + 5, 2, &month))) {
-      return false;
-    }
-    if (ARROW_PREDICT_FALSE(!detail::ParseUnsigned(s + 8, 2, &day))) {
-      return false;
-    }
-    *out = {arrow_vendored::date::year{year}, arrow_vendored::date::month{month},
-            arrow_vendored::date::day{day}};
-    return out->ok();
+  if (ARROW_PREDICT_FALSE(s[10] != ' ') && ARROW_PREDICT_FALSE(s[10] != 'T')) {
+    return false;
   }
-
-  bool ParseHH(const char* s, std::chrono::duration<value_type>* out) {
-    uint8_t hours;
-    if (ARROW_PREDICT_FALSE(!detail::ParseUnsigned(s + 0, 2, &hours))) {
+  if (s[length - 1] == 'Z') {
+    --length;
+  }
+  if (length == 13) {
+    if (ARROW_PREDICT_FALSE(!detail::ParseYYYY_MM_DD(s, &ymd))) {
       return false;
     }
-    if (ARROW_PREDICT_FALSE(hours >= 24)) {
+    std::chrono::duration<ts_type> seconds;
+    if (ARROW_PREDICT_FALSE(!detail::ParseHH(s + 11, &seconds))) {
       return false;
     }
-    *out = std::chrono::duration<value_type>(3600U * hours);
+    *out = detail::ConvertTimePoint(arrow_vendored::date::sys_days(ymd) + seconds, unit);
     return true;
   }
-
-  bool ParseHH_MM(const char* s, std::chrono::duration<value_type>* out) {
-    uint8_t hours, minutes;
-    if (ARROW_PREDICT_FALSE(s[2] != ':')) {
+  if (length == 16) {
+    if (ARROW_PREDICT_FALSE(!detail::ParseYYYY_MM_DD(s, &ymd))) {
       return false;
     }
-    if (ARROW_PREDICT_FALSE(!detail::ParseUnsigned(s + 0, 2, &hours))) {
+    std::chrono::duration<ts_type> seconds;
+    if (ARROW_PREDICT_FALSE(!detail::ParseHH_MM(s + 11, &seconds))) {
       return false;
     }
-    if (ARROW_PREDICT_FALSE(!detail::ParseUnsigned(s + 3, 2, &minutes))) {
-      return false;
-    }
-    if (ARROW_PREDICT_FALSE(hours >= 24)) {
-      return false;
-    }
-    if (ARROW_PREDICT_FALSE(minutes >= 60)) {
-      return false;
-    }
-    *out = std::chrono::duration<value_type>(3600U * hours + 60U * minutes);
+    *out = detail::ConvertTimePoint(arrow_vendored::date::sys_days(ymd) + seconds, unit);
     return true;
   }
-
-  bool ParseHH_MM_SS(const char* s, std::chrono::duration<value_type>* out) {
-    uint8_t hours, minutes, seconds;
-    if (ARROW_PREDICT_FALSE(s[2] != ':') || ARROW_PREDICT_FALSE(s[5] != ':')) {
+  if (length == 19) {
+    if (ARROW_PREDICT_FALSE(!detail::ParseYYYY_MM_DD(s, &ymd))) {
       return false;
     }
-    if (ARROW_PREDICT_FALSE(!detail::ParseUnsigned(s + 0, 2, &hours))) {
+    std::chrono::duration<ts_type> seconds;
+    if (ARROW_PREDICT_FALSE(!detail::ParseHH_MM_SS(s + 11, &seconds))) {
       return false;
     }
-    if (ARROW_PREDICT_FALSE(!detail::ParseUnsigned(s + 3, 2, &minutes))) {
-      return false;
-    }
-    if (ARROW_PREDICT_FALSE(!detail::ParseUnsigned(s + 6, 2, &seconds))) {
-      return false;
-    }
-    if (ARROW_PREDICT_FALSE(hours >= 24)) {
-      return false;
-    }
-    if (ARROW_PREDICT_FALSE(minutes >= 60)) {
-      return false;
-    }
-    if (ARROW_PREDICT_FALSE(seconds >= 60)) {
-      return false;
-    }
-    *out = std::chrono::duration<value_type>(3600U * hours + 60U * minutes + seconds);
+    *out = detail::ConvertTimePoint(arrow_vendored::date::sys_days(ymd) + seconds, unit);
     return true;
   }
+  return false;
+}
 
-  const TimeUnit::type unit_;
+/// \brief Returns time since the UNIX epoch in the requested unit
+static inline bool ParseTimestampStrptime(const char* buf, size_t length,
+                                          const char* format, bool ignore_time_in_day,
+                                          bool allow_trailing_chars, TimeUnit::type unit,
+                                          int64_t* out) {
+  // NOTE: strptime() is more than 10x faster than arrow_vendored::date::parse().
+  // The buffer may not be nul-terminated
+  std::string clean_copy(buf, length);
+  struct tm result;
+  memset(&result, 0, sizeof(struct tm));
+#ifdef _WIN32
+  char* ret = arrow_strptime(clean_copy.c_str(), format, &result);
+#else
+  char* ret = strptime(clean_copy.c_str(), format, &result);
+#endif
+  if (ret == NULLPTR) {
+    return false;
+  }
+  if (!allow_trailing_chars && static_cast<size_t>(ret - clean_copy.c_str()) != length) {
+    return false;
+  }
+  // ignore the time part
+  arrow_vendored::date::sys_seconds secs =
+      arrow_vendored::date::sys_days(arrow_vendored::date::year(result.tm_year + 1900) /
+                                     (result.tm_mon + 1) / result.tm_mday);
+  if (!ignore_time_in_day) {
+    secs += (std::chrono::hours(result.tm_hour) + std::chrono::minutes(result.tm_min) +
+             std::chrono::seconds(result.tm_sec));
+  }
+  *out = detail::ConvertTimePoint(secs, unit);
+  return true;
+}
+
+/// \brief Parsing options for timestamps
+struct ParseTimestampContext {
+  TimeUnit::type unit;
 };
+
+template <>
+inline bool ParseValue<TimestampType, ParseTimestampContext>(
+    const char* s, size_t length, int64_t* out, const ParseTimestampContext* ctx) {
+  return ParseTimestampISO8601(s, length, ctx->unit, out);
+}
 
 }  // namespace internal
 }  // namespace arrow

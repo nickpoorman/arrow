@@ -37,8 +37,8 @@
 #include "arrow/util/key_value_metadata.h"
 #include "arrow/util/logging.h"
 #include "arrow/util/macros.h"
-#include "arrow/util/parsing.h"
 #include "arrow/util/string_view.h"
+#include "arrow/util/value_parsing.h"
 #include "arrow/visitor_inline.h"
 
 namespace arrow {
@@ -652,9 +652,8 @@ class FormatStringParser {
   template <typename IntType = int32_t>
   Result<IntType> ParseInt(util::string_view v) {
     using ArrowIntType = typename CTypeTraits<IntType>::ArrowType;
-    internal::StringConverter<ArrowIntType> converter;
     IntType value;
-    if (!converter(v.data(), v.size(), &value)) {
+    if (!internal::ParseValue<ArrowIntType>(v.data(), v.size(), &value)) {
       return Invalid();
     }
     return value;

@@ -17,6 +17,7 @@
 
 #include "arrow/ipc/reader.h"
 
+#include <algorithm>
 #include <climits>
 #include <cstdint>
 #include <cstring>
@@ -455,7 +456,7 @@ Status GetCompression(const flatbuf::Message* message, Compression::type* out) {
   *out = Compression::UNCOMPRESSED;
   if (message->custom_metadata() != nullptr) {
     // TODO: Ensure this deserialization only ever happens once
-    std::shared_ptr<const KeyValueMetadata> metadata;
+    std::shared_ptr<KeyValueMetadata> metadata;
     RETURN_NOT_OK(internal::GetKeyValueMetadata(message->custom_metadata(), &metadata));
     int index = metadata->FindKey("ARROW:experimental_compression");
     if (index != -1) {
@@ -528,8 +529,11 @@ Status GetInclusionMaskAndOutSchema(const std::shared_ptr<Schema>& full_schema,
 
   inclusion_mask->resize(full_schema->num_fields(), false);
 
+  auto included_indices_sorted = included_indices;
+  std::sort(included_indices_sorted.begin(), included_indices_sorted.end());
+
   FieldVector included_fields;
-  for (int i : included_indices) {
+  for (int i : included_indices_sorted) {
     // Ignore out of bounds indices
     if (i < 0 || i >= full_schema->num_fields()) {
       return Status::Invalid("Out of bounds field index: ", i);
@@ -899,7 +903,9 @@ class RecordBatchFileReaderImpl : public RecordBatchFileReader {
 
     auto fb_metadata = footer_->custom_metadata();
     if (fb_metadata != nullptr) {
-      RETURN_NOT_OK(internal::GetKeyValueMetadata(fb_metadata, &metadata_));
+      std::shared_ptr<KeyValueMetadata> md;
+      RETURN_NOT_OK(internal::GetKeyValueMetadata(fb_metadata, &md));
+      metadata_ = std::move(md);  // const-ify
     }
 
     return Status::OK();

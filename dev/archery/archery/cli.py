@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Licensed to the Apache Software Foundation (ASF) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -30,9 +29,8 @@ from .lang.cpp import CppCMakeDefinition, CppConfiguration
 from .utils.codec import JsonEncoder
 from .utils.lint import linter, python_numpydoc, LintValidationException
 from .utils.logger import logger, ctx as log_ctx
-from .utils.source import ArrowSources
+from .utils.source import ArrowSources, InvalidArrowSource
 from .utils.tmpdir import tmpdir
-from .bot import CommentBot, actions
 
 # Set default logging to INFO in command line.
 logging.basicConfig(level=logging.INFO)
@@ -90,11 +88,10 @@ def archery(ctx, debug, pdb, quiet):
 
 def validate_arrow_sources(ctx, param, src):
     """ Ensure a directory contains Arrow cpp sources. """
-    if isinstance(src, str):
-        if not ArrowSources.valid(src):
-            raise click.BadParameter(f"No Arrow C++ sources found in {src}.")
-        src = ArrowSources(src)
-    return src
+    try:
+        return ArrowSources.find(src)
+    except InvalidArrowSource as e:
+        raise click.BadParameter(str(e))
 
 
 build_dir_type = click.Path(dir_okay=True, file_okay=False, resolve_path=True)
@@ -125,7 +122,7 @@ def _apply_options(cmd, options):
 
 
 @archery.command(short_help="Initialize an Arrow C++ build")
-@click.option("--src", metavar="<arrow_src>", default=ArrowSources.find(),
+@click.option("--src", metavar="<arrow_src>", default=None,
               callback=validate_arrow_sources,
               help="Specify Arrow source directory")
 # toolchain
@@ -284,7 +281,7 @@ def decorate_lint_command(cmd):
 
 
 @archery.command(short_help="Check Arrow source tree for errors")
-@click.option("--src", metavar="<arrow_src>", default=ArrowSources.find(),
+@click.option("--src", metavar="<arrow_src>", default=None,
               callback=validate_arrow_sources,
               help="Specify Arrow source directory")
 @click.option("--fix", is_flag=True, type=BOOL, default=False,
@@ -312,7 +309,7 @@ def lint(ctx, src, fix, iwyu_all, **checks):
 
 @archery.command(short_help="Lint python docstring with NumpyDoc")
 @click.argument('symbols', nargs=-1)
-@click.option("--src", metavar="<arrow_src>", default=ArrowSources.find(),
+@click.option("--src", metavar="<arrow_src>", default=None,
               callback=validate_arrow_sources,
               help="Specify Arrow source directory")
 @click.option("--whitelist", "-w", help="Allow only these rules")
@@ -352,8 +349,7 @@ def benchmark(ctx):
 def benchmark_common_options(cmd):
     options = [
         click.option("--src", metavar="<arrow_src>", show_default=True,
-                     default=ArrowSources.find(),
-                     callback=validate_arrow_sources,
+                     default=None, callback=validate_arrow_sources,
                      help="Specify Arrow source directory"),
         click.option("--preserve", type=BOOL, default=False, show_default=True,
                      is_flag=True,
@@ -392,7 +388,7 @@ def benchmark_list(ctx, rev_or_path, src, preserve, output, cmake_extras,
     """ List benchmark suite.
     """
     with tmpdir(preserve=preserve) as root:
-        logger.debug(f"Running benchmark {rev_or_path}")
+        logger.debug("Running benchmark {}".format(rev_or_path))
 
         conf = CppBenchmarkRunner.default_configuration(
             cmake_extras=cmake_extras, **kwargs)
@@ -445,7 +441,7 @@ def benchmark_run(ctx, rev_or_path, src, preserve, output, cmake_extras,
     archery benchmark run --output=run.json
     """
     with tmpdir(preserve=preserve) as root:
-        logger.debug(f"Running benchmark {rev_or_path}")
+        logger.debug("Running benchmark {}".format(rev_or_path))
 
         conf = CppBenchmarkRunner.default_configuration(
             cmake_extras=cmake_extras, **kwargs)
@@ -471,7 +467,7 @@ def benchmark_run(ctx, rev_or_path, src, preserve, output, cmake_extras,
 def benchmark_diff(ctx, src, preserve, output, cmake_extras,
                    suite_filter, benchmark_filter,
                    threshold, contender, baseline, **kwargs):
-    """ Compare (diff) benchmark runs.
+    """Compare (diff) benchmark runs.
 
     This command acts like git-diff but for benchmark results.
 
@@ -542,8 +538,8 @@ def benchmark_diff(ctx, src, preserve, output, cmake_extras,
     archery --quiet benchmark diff WORKSPACE run.json > result.json
     """
     with tmpdir(preserve=preserve) as root:
-        logger.debug(f"Comparing {contender} (contender) with "
-                     f"{baseline} (baseline)")
+        logger.debug("Comparing {} (contender) with {} (baseline)"
+                     .format(contender, baseline))
 
         conf = CppBenchmarkRunner.default_configuration(
             cmake_extras=cmake_extras, **kwargs)
@@ -650,10 +646,147 @@ def integration(with_all=False, random_seed=12345, **args):
 @click.option('--crossbow-token', '-ct', envvar='CROSSBOW_GITHUB_TOKEN',
               help='OAuth token for pushing to the crossow repository')
 def trigger_bot(event_name, event_payload, arrow_token, crossbow_token):
+    from .bot import CommentBot, actions
+
     event_payload = json.loads(event_payload.read())
 
     bot = CommentBot(name='github-actions', handler=actions, token=arrow_token)
     bot.handle(event_name, event_payload)
+
+
+@archery.group('docker')
+@click.option("--src", metavar="<arrow_src>", default=None,
+              callback=validate_arrow_sources,
+              help="Specify Arrow source directory.")
+@click.pass_obj
+def docker_compose(obj, src):
+    """Interact with docker-compose based builds."""
+    from .docker import DockerCompose
+
+    config_path = src.path / 'docker-compose.yml'
+    if not config_path.exists():
+        raise click.ClickException(
+            "Docker compose configuration cannot be found in directory {}, "
+            "try to pass the arrow source directory explicitly.".format(src)
+        )
+
+    # take the docker-compose parameters like PYTHON, PANDAS, UBUNTU from the
+    # environment variables to keep the usage similar to docker-compose
+    obj['compose'] = DockerCompose(config_path, params=os.environ)
+    obj['compose'].validate()
+
+
+@docker_compose.command('run')
+@click.argument('image')
+@click.argument('command', required=False, default=None)
+@click.option('--env', '-e', multiple=True,
+              help="Set environment variable within the container")
+@click.option('--force-pull/--no-pull', default=True,
+              help="Whether to force pull the image and its ancestor images")
+@click.option('--force-build/--no-build', default=True,
+              help="Whether to force build the image and its ancestor images")
+@click.option('--use-cache/--no-cache', default=True,
+              help="Whether to use cache when building the image and its "
+                   "ancestor images")
+@click.option('--use-leaf-cache/--no-leaf-cache', default=True,
+              help="Whether to use cache when building only the (leaf) image "
+                   "passed as the argument. To disable caching for both the "
+                   "image and its ancestors use --no-cache option.")
+@click.option('--dry-run/--execute', default=False,
+              help="Display the docker-compose commands instead of executing "
+                   "them.")
+@click.option('--volume', '-v', multiple=True,
+              help="Set volume within the container")
+@click.pass_obj
+def docker_compose_run(obj, image, command, env, force_pull, force_build,
+                       use_cache, use_leaf_cache, dry_run, volume):
+    """Execute docker-compose builds.
+
+    To see the available builds run `archery docker list`.
+
+    Examples:
+
+    # execute a single build
+    archery docker run conda-python
+
+    # execute the builds but disable the image pulling
+    archery docker run --no-cache conda-python
+
+    # pass a docker-compose parameter, like the python version
+    PYTHON=3.8 archery docker run conda-python
+
+    # disable the cache only for the leaf image
+    PANDAS=master archery docker run --no-leaf-cache conda-python-pandas
+
+    # entirely skip building the image
+    archery docker run --no-pull --no-build conda-python
+
+    # pass runtime parameters via docker environment variables
+    archery docker run -e CMAKE_BUILD_TYPE=release ubuntu-cpp
+
+    # set a volume
+    archery docker run -v $PWD/build:/build ubuntu-cpp
+
+    # starting an interactive bash session for debugging
+    archery docker run ubuntu-cpp bash
+    """
+    from .docker import UndefinedImage
+
+    compose = obj['compose']
+
+    if dry_run:
+        from types import MethodType
+
+        def _print_command(self, *args, **kwargs):
+            params = ['{}={}'.format(k, v) for k, v in self.params.items()]
+            command = ' '.join(params + ['docker-compose'] + list(args))
+            click.echo(command)
+
+        compose._execute = MethodType(_print_command, compose)
+
+    env = dict(kv.split('=') for kv in env)
+    try:
+        compose.run(
+            image,
+            command=command,
+            env=env,
+            force_pull=force_pull,
+            force_build=force_build,
+            use_cache=use_cache,
+            use_leaf_cache=use_leaf_cache,
+            volumes=volume
+        )
+    except UndefinedImage as e:
+        raise click.ClickException(
+            "There is no service/image defined in docker-compose.yml with "
+            "name: {}".format(str(e))
+        )
+    except RuntimeError as e:
+        raise click.ClickException(str(e))
+
+
+@docker_compose.command('push')
+@click.argument('image')
+@click.option('--user', '-u', required=True, envvar='ARCHERY_DOCKER_USER',
+              help='Docker repository username')
+@click.option('--password', '-p', required=True,
+              envvar='ARCHERY_DOCKER_PASSWORD',
+              help='Docker repository password')
+@click.pass_obj
+def docker_compose_push(obj, image, user, password):
+    """Push the generated docker-compose image."""
+    compose = obj['compose']
+    compose.push(image, user=user, password=password)
+
+
+@docker_compose.command('images')
+@click.pass_obj
+def docker_compose_images(obj):
+    """List the available docker-compose images."""
+    compose = obj['compose']
+    click.echo('Available images:')
+    for image in compose.images():
+        click.echo(' - {}'.format(image))
 
 
 if __name__ == "__main__":
