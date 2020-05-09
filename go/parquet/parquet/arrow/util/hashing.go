@@ -3,7 +3,7 @@ package util
 import (
 	"fmt"
 	"hash/maphash"
-	"io"
+	"math"
 
 	"github.com/apache/arrow/go/arrow/bitutil"
 	"github.com/apache/arrow/go/arrow/memory"
@@ -365,6 +365,7 @@ func (s *ScalarMemoTable) copyValues(start int32, outSize int64, outData []SCALA
 	})
 }
 
+// TODO: Remove (clean up)
 // scalar helpers -----------
 
 // type ScalarHelperTemplate struct {
@@ -505,9 +506,10 @@ func (s *ScalarMemoTable) copyValues(start int32, outSize int64, outData []SCALA
 // 	}
 // }
 
-func ScalarComputeHash(value arrow.Scalar) (uint64, error) {
+func ScalarComputeHash(scalar arrow.Scalar) (uint64, error) {
 	h1 := new(maphash.Hash)
-	if _, err := io.Copy(h1, value); err != nil {
+	_, err := h1.Write(scalar.ValueBytes())
+	if err != nil {
 		return 0, err
 	}
 	return h1.Sum64(), nil
@@ -515,29 +517,32 @@ func ScalarComputeHash(value arrow.Scalar) (uint64, error) {
 
 func CompareScalars(left, right arrow.Scalar) bool {
 	if isFloatingPoint(left) && isFloatingPoint(right) {
-		if 
+		if math.IsNaN(scalarToFloat64(left)) {
+			// XXX should we do a bit-precise comparison?
+			return math.IsNaN(scalarToFloat64(right))
+		}
 	}
-	if left == right {
-		return true
-	}
+	return left.Equals(right)
 }
 
 func isFloatingPoint(scalar arrow.Scalar) bool {
 	switch scalar.(type) {
-	case *arrow.HalfFloatScalar, *arrow.FloatScalar, *arrow.DoubleScalar:
+	case *arrow.Float16Scalar, *arrow.Float32Scalar, *arrow.Float64Scalar:
 		return true
 	default:
 		return false
 	}
 }
 
-func scalarToFloat64(s Scalar) float64 {
-	switch v := s.(type) {
-	case float32:
-		return float64(v)
-	case float64:
-		return v
+func scalarToFloat64(scalar arrow.Scalar) float64 {
+	switch v := scalar.(type) {
+	case *arrow.Float16Scalar:
+		return float64(v.Value().Float32())
+	case *arrow.Float32Scalar:
+		return float64(v.Value())
+	case *arrow.Float64Scalar:
+		return v.Value()
 	default:
-		panic(fmt.Sprintf("ScalarToFloat64: unknown Scalar type: %T", s))
+		panic(fmt.Sprintf("scalarToFloat64: unknown Scalar type: %T", scalar))
 	}
 }
