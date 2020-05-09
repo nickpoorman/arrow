@@ -242,8 +242,6 @@ func (b *entryBufferBuilder) Finish() *memory.Buffer {
 	return nil
 }
 
-type SCALAR_TYPE_PLACEHOLDER interface{}
-
 const kKeyNotFound = -1
 
 func OnFoundNoOp(memoIndex int32)    {}
@@ -350,13 +348,13 @@ func (ScalarMemoTable) ComputeHash(value arrow.Scalar) (uint64, error) {
 // Copy values starting from index `start` into `outData`.
 // Check the size in debug mode.
 func (s *ScalarMemoTable) CopyValues(start int32, outSize int64, outData interface{}) {
-	outDataScalars := outData.([]SCALAR_TYPE_PLACEHOLDER)
+	outDataScalars := outData.([]arrow.Scalar)
 	s.copyValues(start, outSize, outDataScalars)
 }
 
 // Copy values starting from index `start` into `outData`.
 // Check the size in debug mode.
-func (s *ScalarMemoTable) copyValues(start int32, outSize int64, outData []SCALAR_TYPE_PLACEHOLDER) {
+func (s *ScalarMemoTable) copyValues(start int32, outSize int64, outData []arrow.Scalar) {
 	s.hashTable.VisitEntries(func(entry *HashTableEntry) {
 		index := entry.payload.(*scalarPayload).memoIndex - start
 		if index >= 0 {
@@ -364,147 +362,6 @@ func (s *ScalarMemoTable) copyValues(start int32, outSize int64, outData []SCALA
 		}
 	})
 }
-
-// TODO: Remove (clean up)
-// scalar helpers -----------
-
-// type ScalarHelperTemplate struct {
-// 	arrow.Scalar
-// }
-
-// var ScalarHelpers map[]
-
-// type Scalar interface{}
-
-// func ScalarToUint64(s arrow.Scalar) uint64 {
-// 	switch v := s.(type) {
-// 	case bool:
-// 		if v {
-// 			return 1
-// 		}
-// 		return 0
-// 	case uint8:
-// 		return uint64(v)
-// 	case uint16:
-// 		return uint64(v)
-// 	case uint32:
-// 		return uint64(v)
-// 	case uint64:
-// 		return uint64(v)
-// 	case int8:
-// 		return uint64(v)
-// 	case int16:
-// 		return uint64(v)
-// 	case int32:
-// 		return uint64(v)
-// 	case int64:
-// 		return uint64(v)
-// 	default:
-// 		panic(fmt.Sprintf("ScalarToUint64: unknown Scalar type: %T", s))
-// 	}
-// }
-
-// func ScalarToFloat64(s Scalar) float64 {
-// 	switch v := s.(type) {
-// 	case float32:
-// 		return float64(v)
-// 	case float64:
-// 		return v
-// 	default:
-// 		panic(fmt.Sprintf("ScalarToFloat64: unknown Scalar type: %T", s))
-// 	}
-// }
-
-// type ScalarHelperBase struct {
-// 	Scalar Scalar
-// 	AlgNum int
-// }
-
-// func (s *ScalarHelperBase) CompareScalars(u Scalar, v Scalar) bool {
-// 	// switch s.Scalar.(type) {
-// 	// 	// ScalarHelper specialization for reals
-// 	// if math.IsNaN(ScalarToFloat64(u)) {
-// 	// 	// XXX should we do a bit-precise comparison?
-// 	// 	return math.IsNaN(ScalarToFloat64(v))
-// 	// }
-// 	// return u == v
-// 	// }
-// 	// return u == v
-// 	panic("not implemented")
-// }
-
-// func (s *ScalarHelperBase) ComputeHash(value *Scalar) uint64 {
-// 	// Generic hash computation for scalars.  Simply apply the string hash
-// 	// to the bit representation of the value.
-
-// 	// XXX in the case of FP values, we'd like equal values to have the same hash,
-// 	// even if they have different bit representations...
-// 	return ComputeStringHash(value, int64(binary.Size(value)))
-// }
-
-// type ScalarHelper struct {
-// 	ScalarHelperBase
-// }
-
-// func NewScalarHelper(algNum int, scalar Scalar) *ScalarHelper {
-// 	sh := &ScalarHelper{
-// 		ScalarHelperBase: ScalarHelperBase{
-// 			Scalar: scalar,
-// 			AlgNum: algNum,
-// 		},
-// 	}
-// 	return sh
-// }
-
-// func (s *ScalarHelper) ComputeHash(value *Scalar) uint64 {
-// 	if isIntegral(*value) {
-// 		// Faster hash computation for integers.
-// 		return s.computeHashIntegral(*value)
-// 	}
-// 	if isFloatingPoint(value) {
-// 		// ScalarHelper specialization for reals
-// 		// return s.computeHashReals(*value)
-// 		panic("not implemented... is this even a thing?")
-// 	}
-
-// 	// default and string type
-// 	return s.ScalarHelperBase.ComputeHash(value)
-// }
-
-// func (s *ScalarHelper) computeHashIntegral(value Scalar) uint64 {
-// 	// Faster hash computation for integers.
-// 	// Two of xxhash's prime multipliers (which are chosen for their
-// 	// bit dispersion properties)
-// 	var multipliers = [...]uint64{11400714785074694791, 14029467366897019727}
-
-// 	// Multiplying by the prime number mixes the low bits into the high bits,
-// 	// then byte-swapping (which is a single CPU instruction) allows the
-// 	// combined high and low bits to participate in the initial hash table index.
-// 	h := ScalarToUint64(value)
-// 	return uint64(bitutilext.ByteSwap64(multipliers[s.AlgNum] * h))
-// }
-
-// func isIntegral(value interface{}) bool {
-// 	switch value.(type) {
-// 	case bool, uint8, uint16, uint32, uint64, int8, int16, int32, int64:
-// 		return true
-// 	default:
-// 		return false
-// 	}
-// }
-
-// func (s *ScalarHelper) computeHashReals(u Scalar, v Scalar) bool {
-// 	panic("not implemented")
-// }
-
-// func isFloatingPoint(value interface{}) bool {
-// 	switch value.(type) {
-// 	case float32, float64:
-// 		return true
-// 	default:
-// 		return false
-// 	}
-// }
 
 func ScalarComputeHash(scalar arrow.Scalar) (uint64, error) {
 	h1 := new(maphash.Hash)
