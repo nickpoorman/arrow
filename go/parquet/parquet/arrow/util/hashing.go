@@ -40,26 +40,27 @@ func ComputeStringHash(data interface{}, length int64) hash_t {
 const kSentinel = uint64(0)
 const kLoadFactor = uint64(2)
 
-type EntryPayload interface {
+type HashTableEntryPayload interface {
 	// io.ReadWriter
 }
 
-type Entry struct {
+type HashTableEntry struct {
 	h       hash_t
-	payload EntryPayload
+	payload HashTableEntryPayload
 }
 
-func (e Entry) bool() bool { return uint64(e.h) != kSentinel }
+func (e HashTableEntry) bool() bool { return uint64(e.h) != kSentinel }
 
-type HashTableCmpFunc func(EntryPayload) bool
+type HashTableCmpFunc func(HashTableEntryPayload) bool
 
 type HashTable interface {
 	// Lookup with non-linear probing
 	// cmp_func should have signature bool(const Payload*).
 	// Return a (Entry*, found) pair.
-	Lookup(h hash_t, cmpFunc HashTableCmpFunc) (*Entry, bool)
-	Insert(entry *Entry, h hash_t, payload Payload)
+	Lookup(h hash_t, cmpFunc HashTableCmpFunc) (*HashTableEntry, bool)
+	Insert(entry *HashTableEntry, h hash_t, payload Payload)
 	Size() uint64
+	VisitEntries(visitFunc func(*HashTableEntry))
 }
 
 type CompareKind int
@@ -125,7 +126,7 @@ func (ht *hashTable) Upsize(newCapacity uint64) error {
 		if entry != nil {
 			// Dummy compare function will not be called
 			pFirst, pSecond := ht.lookup(HashTable_CompareKind_NoCompare, entry.h, ht.entries(), newMask,
-				func(payload EntryPayload) bool { return false })
+				func(payload HashTableEntryPayload) bool { return false })
 			// Lookup<NoCompare> (and CompareEntry<NoCompare>) ensure that an
 			// empty slots is always returned
 			if pSecond {
@@ -140,17 +141,17 @@ func (ht *hashTable) Upsize(newCapacity uint64) error {
 	return nil
 }
 
-func (ht *hashTable) entries() []*Entry {
+func (ht *hashTable) entries() []*HashTableEntry {
 	return ht.entriesBuilder.Values()
 }
 
-func (ht *hashTable) Lookup(h hash_t, cmpFunc HashTableCmpFunc) (*Entry, bool) {
+func (ht *hashTable) Lookup(h hash_t, cmpFunc HashTableCmpFunc) (*HashTableEntry, bool) {
 	pFirst, pSecond := ht.lookup(HashTable_CompareKind_DoCompare, h, ht.entries(), ht.capacityMask, cmpFunc)
 	return ht.entries()[pFirst], pSecond
 }
 
 // The workhorse lookup function
-func (ht *hashTable) lookup(cKind CompareKind, h hash_t, entries []*Entry, sizeMask uint64, cmpFunc HashTableCmpFunc) (uint64, bool) {
+func (ht *hashTable) lookup(cKind CompareKind, h hash_t, entries []*HashTableEntry, sizeMask uint64, cmpFunc HashTableCmpFunc) (uint64, bool) {
 	const perturbShift uint8 = 5
 
 	var index uint64
@@ -186,14 +187,14 @@ func (*hashTable) fixHash(h hash_t) hash_t {
 	return h
 }
 
-func (*hashTable) CompareEntry(cKind CompareKind, h hash_t, entry *Entry, cmpFunc HashTableCmpFunc) bool {
+func (*hashTable) CompareEntry(cKind CompareKind, h hash_t, entry *HashTableEntry, cmpFunc HashTableCmpFunc) bool {
 	if cKind == HashTable_CompareKind_NoCompare {
 		return false
 	}
 	return entry.h == h && cmpFunc(entry.payload)
 }
 
-func (ht *hashTable) Insert(entry *Entry, h hash_t, payload EntryPayload) error {
+func (ht *hashTable) Insert(entry *HashTableEntry, h hash_t, payload HashTableEntryPayload) error {
 	if entry == nil {
 		return fmt.Errorf("Insert: entry is nil")
 	}
@@ -209,14 +210,37 @@ func (ht *hashTable) Insert(entry *Entry, h hash_t, payload EntryPayload) error 
 }
 
 // Visit all non-empty entries in the table
-// The visit_func should have signature func(*Entry)
-func (ht *hashTable) VisitEntries(visitFunc func(*Entry)) {
+// The visit_func should have signature func(*HashTableEntry)
+func (ht *hashTable) VisitEntries(visitFunc func(*HashTableEntry)) {
 	for i := uint64(0); i < ht.capacity; i++ {
 		entry := ht.entries()[i]
 		if entry != nil {
 			visitFunc(entry)
 		}
 	}
+}
+
+// Type specific class for a buffer builder to hold Entry structs.
+type entryBufferBuilder struct {
+	// TODO(nickpoorman): Use Arrow TypedBufferBuilder instead of native array.
+	// array.BufferBuilder
+	entries []*HashTableEntry
+}
+
+func (b *entryBufferBuilder) Resize(elements int) {
+	enteries := make([]*HashTableEntry, elements, elements)
+	copy(enteries, b.entries)
+	b.entries = enteries
+}
+
+func (b *entryBufferBuilder) Values() []*HashTableEntry {
+	return b.entries
+}
+
+// Reset and return the buffer
+func (b *entryBufferBuilder) Finish() *memory.Buffer {
+	b.entries = make([]*HashTableEntry, 0)
+	return nil
 }
 
 type ScalarHelperTemplate struct {
@@ -370,7 +394,7 @@ func OnNotFoundNoOp(memoIndex int32) {}
 type MemoTable interface {
 	Size() int32
 	GetOrInsert(value interface{}, onFound func(memoIndex int32), onNotFound func(memoIndex int32), outMemoIndex *int32) error
-	CopyValues(start int32, outSize int64, outData []byte)
+	CopyValues(start int32, outSize int64, outData interface{})
 }
 
 // ----------------------------------------------------------------------
@@ -379,13 +403,13 @@ type MemoTable interface {
 // The memoization table remembers and allows to look up the insertion
 // index for each key.
 
-type Payload struct {
+type scalarPayload struct {
 	value     Scalar
 	memoIndex int32
 }
 
 type ScalarMemoTable struct {
-	hashTable HashTableType
+	hashTable HashTable
 	nullIndex int32 // default: kKeyNotFound
 }
 
@@ -397,8 +421,12 @@ func NewScalarMemoTable() *ScalarMemoTable {
 
 // The number of entries in the memo table +1 if null was added.
 // (which is also 1 + the largest memo index)
-func (s ScalarMemoTable) size(value Scalar) {
-	return int32(s.hashTable.size()) + (s.GetNull() != kKeyNotFound)
+func (s ScalarMemoTable) size(value Scalar) int {
+	nullAdded := 0
+	if s.GetNull() != kKeyNotFound {
+		nullAdded = 1
+	}
+	return int(s.hashTable.Size()) + nullAdded
 }
 
 func (ScalarMemoTable) Get(value Scalar) int32 {
@@ -441,50 +469,18 @@ func (ScalarMemoTable) ComputeHash(value Scalar) hash_t {
 
 // Copy values starting from index `start` into `outData`.
 // Check the size in debug mode.
-func (s *ScalarMemoTable) CopyValues(start int32, outSize int64, outData []byte) {
+func (s *ScalarMemoTable) CopyValues(start int32, outSize int64, outData interface{}) {
+	outDataScalars := outData.([]SCALAR_TYPE_PLACEHOLDER)
+	s.copyValues(start, outSize, outDataScalars)
+}
+
+// Copy values starting from index `start` into `outData`.
+// Check the size in debug mode.
+func (s *ScalarMemoTable) copyValues(start int32, outSize int64, outData []SCALAR_TYPE_PLACEHOLDER) {
 	s.hashTable.VisitEntries(func(entry *HashTableEntry) {
-		index := entry.payload.memoIndex - start
+		index := entry.payload.(*scalarPayload).memoIndex - start
 		if index >= 0 {
-			outData[index] = entry.payload.value
+			outData[index] = entry.payload.(*scalarPayload).value
 		}
 	})
 }
-
-// Type specific class for a buffer builder to hold Entry structs.
-type entryBufferBuilder struct {
-	// TODO(nickpoorman): Use Arrow TypedBufferBuilder instead of native array.
-	// array.BufferBuilder
-	entries []*Entry
-}
-
-func (b *entryBufferBuilder) Resize(elements int) {
-	enteries := make([]*Entry, elements, elements)
-	copy(enteries, b.entries)
-	b.entries = enteries
-}
-
-// func (b *entryBufferBuilder) AppendValues(v []Entry) {
-// 	panic("not implemented")
-// }
-
-// func (b *entryBufferBuilder) AppendValue(v Entry) {
-// 	panic("not implemented")
-// }
-
-func (b *entryBufferBuilder) Values() []*Entry {
-	return b.entries
-}
-
-// Reset and return the buffer
-func (b *entryBufferBuilder) Finish() *memory.Buffer {
-	b.entries = make([]*Entry, 0)
-	return nil
-}
-
-// func (b *entryBufferBuilder) Value(i int) Entry {
-// 	panic("not implemented")
-// }
-
-// func (b *entryBufferBuilder) Len() int {
-// 	panic("not implemented")
-// }
