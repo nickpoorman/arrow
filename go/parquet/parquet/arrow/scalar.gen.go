@@ -21,6 +21,9 @@ type BooleanScalar struct {
 }
 
 func NewBooleanScalar(value bool, dataType arrow.DataType) BooleanScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return BooleanScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -57,6 +60,9 @@ type Int8Scalar struct {
 }
 
 func NewInt8Scalar(value int8, dataType arrow.DataType) Int8Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Int8Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -93,6 +99,9 @@ type Int16Scalar struct {
 }
 
 func NewInt16Scalar(value int16, dataType arrow.DataType) Int16Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Int16Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -129,6 +138,9 @@ type Int32Scalar struct {
 }
 
 func NewInt32Scalar(value int32, dataType arrow.DataType) Int32Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Int32Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -165,6 +177,9 @@ type Int64Scalar struct {
 }
 
 func NewInt64Scalar(value int64, dataType arrow.DataType) Int64Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Int64Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -201,6 +216,9 @@ type Uint8Scalar struct {
 }
 
 func NewUint8Scalar(value uint8, dataType arrow.DataType) Uint8Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Uint8Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -237,6 +255,9 @@ type Uint16Scalar struct {
 }
 
 func NewUint16Scalar(value uint16, dataType arrow.DataType) Uint16Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Uint16Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -273,6 +294,9 @@ type Uint32Scalar struct {
 }
 
 func NewUint32Scalar(value uint32, dataType arrow.DataType) Uint32Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Uint32Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -309,6 +333,9 @@ type Uint64Scalar struct {
 }
 
 func NewUint64Scalar(value uint64, dataType arrow.DataType) Uint64Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Uint64Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -345,6 +372,9 @@ type Float16Scalar struct {
 }
 
 func NewFloat16Scalar(value float16.Num, dataType arrow.DataType) Float16Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Float16Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -381,6 +411,9 @@ type Float32Scalar struct {
 }
 
 func NewFloat32Scalar(value float32, dataType arrow.DataType) Float32Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Float32Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -417,6 +450,9 @@ type Float64Scalar struct {
 }
 
 func NewFloat64Scalar(value float64, dataType arrow.DataType) Float64Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Float64Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -453,6 +489,9 @@ type BinaryScalar struct {
 }
 
 func NewBinaryScalar(value *memory.Buffer, dataType arrow.DataType) BinaryScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return BinaryScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -487,6 +526,9 @@ type StringScalar struct {
 }
 
 func NewStringScalar(value *memory.Buffer, dataType arrow.DataType) StringScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return StringScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -521,6 +563,9 @@ type LargeBinaryScalar struct {
 }
 
 func NewLargeBinaryScalar(value *memory.Buffer, dataType arrow.DataType) LargeBinaryScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return LargeBinaryScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -589,6 +634,9 @@ type FixedSizeBinaryScalar struct {
 }
 
 func NewFixedSizeBinaryScalar(value *memory.Buffer, dataType arrow.DataType) FixedSizeBinaryScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return FixedSizeBinaryScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -623,6 +671,9 @@ type Date32Scalar struct {
 }
 
 func NewDate32Scalar(value arrow.Date32, dataType arrow.DataType) Date32Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Date32Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -659,6 +710,9 @@ type Date64Scalar struct {
 }
 
 func NewDate64Scalar(value arrow.Date64, dataType arrow.DataType) Date64Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Date64Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -695,6 +749,9 @@ type Time32Scalar struct {
 }
 
 func NewTime32Scalar(value arrow.Time32, dataType arrow.DataType) Time32Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Time32Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -731,6 +788,9 @@ type Time64Scalar struct {
 }
 
 func NewTime64Scalar(value arrow.Time64, dataType arrow.DataType) Time64Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Time64Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -767,6 +827,9 @@ type TimestampScalar struct {
 }
 
 func NewTimestampScalar(value arrow.Timestamp, dataType arrow.DataType) TimestampScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return TimestampScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -803,6 +866,9 @@ type MonthIntervalScalar struct {
 }
 
 func NewMonthIntervalScalar(value arrow.MonthInterval, dataType arrow.DataType) MonthIntervalScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return MonthIntervalScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -839,6 +905,9 @@ type DayTimeIntervalScalar struct {
 }
 
 func NewDayTimeIntervalScalar(value arrow.DayTimeInterval, dataType arrow.DataType) DayTimeIntervalScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return DayTimeIntervalScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -875,6 +944,9 @@ type DurationScalar struct {
 }
 
 func NewDurationScalar(value arrow.Duration, dataType arrow.DataType) DurationScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return DurationScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -911,6 +983,9 @@ type Decimal128Scalar struct {
 }
 
 func NewDecimal128Scalar(value decimal128.Num, dataType arrow.DataType) Decimal128Scalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return Decimal128Scalar{
 		isValid:  false,
 		dataType: dataType,
@@ -947,6 +1022,9 @@ type ListScalar struct {
 }
 
 func NewListScalar(value array.Interface, dataType arrow.DataType) ListScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return ListScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -981,6 +1059,9 @@ type largeListScalar struct {
 }
 
 func NewlargeListScalar(value array.Interface, dataType arrow.DataType) largeListScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return largeListScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -1015,6 +1096,9 @@ type MapScalar struct {
 }
 
 func NewMapScalar(value array.Interface, dataType arrow.DataType) MapScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return MapScalar{
 		isValid:  false,
 		dataType: dataType,
@@ -1049,6 +1133,9 @@ type FixedSizeListScalar struct {
 }
 
 func NewFixedSizeListScalar(value array.Interface, dataType arrow.DataType) FixedSizeListScalar {
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
 	return FixedSizeListScalar{
 		isValid:  false,
 		dataType: dataType,

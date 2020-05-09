@@ -20,6 +20,11 @@ type {{.T}}Scalar struct {
 }
 
 func New{{.T}}Scalar(value {{.CType}}, dataType arrow.DataType) {{.T}}Scalar {
+	{{- if .DefaultDataType}}
+	if dataType == nil {
+		dataType = arrow.PrimitiveTypes.Int64
+	}
+	{{- end}}
 	return {{.T}}Scalar{
 		isValid: false,
 		dataType: dataType,
@@ -57,3 +62,16 @@ var (
 	_ Scalar = (*{{.T}}Scalar)(nil)
 	{{- end}}
 )
+
+{{/* Probably don't want to do this since the types aren't one-to-one */}}
+{{/* This would have to be matched off of dataType */}}
+{{/* func newScalarGeneratedTypes(value interface{}, dataType arrow.DataType) (Scalar, bool) {
+	switch v := value.(type) {
+	{{- range .In}}
+	case {{.CType}}:
+		return New{{.T}}Scalar(v, dataType), true
+	{{- end}}
+	default:
+		return nil, false
+	}
+} */}}

@@ -106,7 +106,7 @@ func (b *FixedSizeBinaryBuilder) AppendValues(v [][]byte, valid []bool) {
 
 func (b *FixedSizeBinaryBuilder) init(capacity int) {
 	b.builder.init(capacity)
-	b.values.resize(capacity * b.dtype.ByteWidth)
+	b.values.Resize(capacity * b.dtype.ByteWidth)
 }
 
 // Reserve ensures there is enough space for appending n elements

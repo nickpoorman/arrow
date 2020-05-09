@@ -51,7 +51,7 @@ func (b *Int64BufferBuilder) Len() int { return b.length / arrow.Int64SizeBytes 
 func (b *Int64BufferBuilder) AppendValue(v int64) {
 	if b.capacity < b.length+arrow.Int64SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Int64SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Int64Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Int64SizeBytes
@@ -84,7 +84,7 @@ func (b *Uint64BufferBuilder) Len() int { return b.length / arrow.Uint64SizeByte
 func (b *Uint64BufferBuilder) AppendValue(v uint64) {
 	if b.capacity < b.length+arrow.Uint64SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Uint64SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Uint64Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Uint64SizeBytes
@@ -121,7 +121,7 @@ func (b *Float64BufferBuilder) Len() int { return b.length / arrow.Float64SizeBy
 func (b *Float64BufferBuilder) AppendValue(v float64) {
 	if b.capacity < b.length+arrow.Float64SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Float64SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Float64Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Float64SizeBytes
@@ -154,7 +154,7 @@ func (b *Int32BufferBuilder) Len() int { return b.length / arrow.Int32SizeBytes 
 func (b *Int32BufferBuilder) AppendValue(v int32) {
 	if b.capacity < b.length+arrow.Int32SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Int32SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Int32Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Int32SizeBytes
@@ -187,7 +187,7 @@ func (b *Uint32BufferBuilder) Len() int { return b.length / arrow.Uint32SizeByte
 func (b *Uint32BufferBuilder) AppendValue(v uint32) {
 	if b.capacity < b.length+arrow.Uint32SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Uint32SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Uint32Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Uint32SizeBytes
@@ -224,7 +224,7 @@ func (b *Float32BufferBuilder) Len() int { return b.length / arrow.Float32SizeBy
 func (b *Float32BufferBuilder) AppendValue(v float32) {
 	if b.capacity < b.length+arrow.Float32SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Float32SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Float32Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Float32SizeBytes
@@ -257,7 +257,7 @@ func (b *Int16BufferBuilder) Len() int { return b.length / arrow.Int16SizeBytes 
 func (b *Int16BufferBuilder) AppendValue(v int16) {
 	if b.capacity < b.length+arrow.Int16SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Int16SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Int16Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Int16SizeBytes
@@ -290,7 +290,7 @@ func (b *Uint16BufferBuilder) Len() int { return b.length / arrow.Uint16SizeByte
 func (b *Uint16BufferBuilder) AppendValue(v uint16) {
 	if b.capacity < b.length+arrow.Uint16SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Uint16SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Uint16Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Uint16SizeBytes
@@ -323,7 +323,7 @@ func (b *Int8BufferBuilder) Len() int { return b.length / arrow.Int8SizeBytes }
 func (b *Int8BufferBuilder) AppendValue(v int8) {
 	if b.capacity < b.length+arrow.Int8SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Int8SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Int8Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Int8SizeBytes
@@ -356,7 +356,7 @@ func (b *Uint8BufferBuilder) Len() int { return b.length / arrow.Uint8SizeBytes 
 func (b *Uint8BufferBuilder) AppendValue(v uint8) {
 	if b.capacity < b.length+arrow.Uint8SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Uint8SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Uint8Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Uint8SizeBytes
@@ -393,7 +393,7 @@ func (b *TimestampBufferBuilder) Len() int { return b.length / arrow.TimestampSi
 func (b *TimestampBufferBuilder) AppendValue(v arrow.Timestamp) {
 	if b.capacity < b.length+arrow.TimestampSizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.TimestampSizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.TimestampTraits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.TimestampSizeBytes
@@ -430,7 +430,7 @@ func (b *Time32BufferBuilder) Len() int { return b.length / arrow.Time32SizeByte
 func (b *Time32BufferBuilder) AppendValue(v arrow.Time32) {
 	if b.capacity < b.length+arrow.Time32SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Time32SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Time32Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Time32SizeBytes
@@ -467,7 +467,7 @@ func (b *Time64BufferBuilder) Len() int { return b.length / arrow.Time64SizeByte
 func (b *Time64BufferBuilder) AppendValue(v arrow.Time64) {
 	if b.capacity < b.length+arrow.Time64SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Time64SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Time64Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Time64SizeBytes
@@ -504,7 +504,7 @@ func (b *Date32BufferBuilder) Len() int { return b.length / arrow.Date32SizeByte
 func (b *Date32BufferBuilder) AppendValue(v arrow.Date32) {
 	if b.capacity < b.length+arrow.Date32SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Date32SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Date32Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Date32SizeBytes
@@ -541,7 +541,7 @@ func (b *Date64BufferBuilder) Len() int { return b.length / arrow.Date64SizeByte
 func (b *Date64BufferBuilder) AppendValue(v arrow.Date64) {
 	if b.capacity < b.length+arrow.Date64SizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.Date64SizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.Date64Traits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.Date64SizeBytes
@@ -578,7 +578,7 @@ func (b *DurationBufferBuilder) Len() int { return b.length / arrow.DurationSize
 func (b *DurationBufferBuilder) AppendValue(v arrow.Duration) {
 	if b.capacity < b.length+arrow.DurationSizeBytes {
 		newCapacity := bitutil.NextPowerOf2(b.length + arrow.DurationSizeBytes)
-		b.resize(newCapacity)
+		b.Resize(newCapacity)
 	}
 	arrow.DurationTraits.PutValue(b.bytes[b.length:], v)
 	b.length += arrow.DurationSizeBytes
