@@ -12,27 +12,6 @@ import (
 	"github.com/nickpoorman/arrow-parquet-go/parquet/arrow"
 )
 
-// type hash_t uint64
-
-// XXX would it help to have a 32-bit hash value on large datasets?
-// type hash_t uint64
-
-// Notes about the choice of a hash function.
-// - XXH3 is extremely fast on most data sizes, from small to huge;
-//   faster even than HW CRC-based hashing schemes
-// - our custom hash function for tiny values (< 16 bytes) is still
-//   significantly faster (~30%), at least on this machine and compiler
-
-func ComputeStringHash(data interface{}, length int64) uint64 {
-	if length <= 16 {
-		// Specialize for small hash strings, as they are quite common as
-		// hash table keys.  Even XXH3 isn't quite as fast.
-		// p := data.([]byte)
-	}
-
-	panic("not implemented")
-}
-
 // XXX add a HashEq<ArrowType> struct with both hash and compare functions?
 
 // ----------------------------------------------------------------------
@@ -227,7 +206,7 @@ type entryBufferBuilder struct {
 }
 
 func (b *entryBufferBuilder) Resize(elements int) {
-	enteries := make([]*HashTableEntry, elements, elements)
+	enteries := make([]*HashTableEntry, elements)
 	copy(enteries, b.entries)
 	b.entries = enteries
 }
