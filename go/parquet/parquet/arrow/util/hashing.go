@@ -1,5 +1,19 @@
 package util
 
+import (
+	"encoding/binary"
+	"fmt"
+
+	"github.com/apache/arrow/go/arrow/array"
+	"github.com/apache/arrow/go/arrow/bitutil"
+	"github.com/apache/arrow/go/arrow/memory"
+	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
+	"github.com/nickpoorman/arrow-parquet-go/internal/util"
+	bitutilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util/bitutil"
+)
+
+type hash_t uint64
+
 // XXX would it help to have a 32-bit hash value on large datasets?
 // type hash_t uint64
 
@@ -13,28 +27,196 @@ func ComputeStringHash(data interface{}, length int64) hash_t {
 	if length <= 16 {
 		// Specialize for small hash strings, as they are quite common as
 		// hash table keys.  Even XXH3 isn't quite as fast.
-		p := data.([]byte)
-
+		// p := data.([]byte)
 	}
-}
 
+	panic("not implemented")
+}
 
 // XXX add a HashEq<ArrowType> struct with both hash and compare functions?
 
 // ----------------------------------------------------------------------
 // An open-addressing insert-only hash table (no deletes)
+
+const kSentinel = uint64(0)
+const kLoadFactor = uint64(2)
+
+type entryPayload interface {
+	Bytes() []byte
+	SizeOf() int
+}
+
+type Entry struct {
+	h       hash_t
+	payload entryPayload
+}
+
+func (e Entry) bool() bool { return uint64(e.h) != kSentinel }
+
+type CmpFunc func(interface{}) bool
+
 type HashTable interface {
 	// Lookup with non-linear probing
 	// cmp_func should have signature bool(const Payload*).
 	// Return a (Entry*, found) pair.
-	Lookup(h hash_t, cmpFunc CmpFunc) (Entry, bool)
-	Insert(entry Entry, h hash_t, payload Payload) 
+	Lookup(h hash_t, cmpFunc CmpFunc) (*Entry, bool)
+	Insert(entry *Entry, h hash_t, payload Payload)
+	Size() uint64
 }
+
+type CompareKind int
+
+const (
+	_ CompareKind = iota
+	HashTable_CompareKind_DoCompare
+	HashTable_CompareKind_NoCompare
+)
 
 type hashTable struct {
+	// The number of slots available in the hash table array.
+	capacity     uint64
+	capacityMask uint64
+	// The number of used slots in the hash table array.
+	size uint64
 
+	// TODO(nickpoorman): Use Arrow TypedBufferBuilder instead of native array.
+	// entries        []*Entry
+	entriesBuilder entryBufferBuilder
 }
 
+func NewHashTable(pool *memory.Allocator, capacity uint64) *hashTable {
+	debug.Assert(pool != nil, "Assert: pool != nil")
+	ht := &hashTable{}
+	// Minimum of 32 elements
+	capacity = util.MaxUint64(capacity, uint64(32))
+	ht.capacity = uint64(bitutil.NextPowerOf2(int(capacity)))
+	ht.capacityMask = ht.capacity - 1
+	ht.size = 0
+
+	ht.UpsizeBuffer(ht.capacity)
+	return ht
+}
+
+func (ht *hashTable) Size() uint64 {
+	return ht.size
+}
+
+func (ht *hashTable) NeedUpsizing() bool {
+	// Keep the load factor <= 1/2
+	return ht.size*kLoadFactor >= ht.capacity
+}
+
+func (ht *hashTable) UpsizeBuffer(capacity uint64) {
+	ht.entriesBuilder.Resize(int(capacity))
+}
+
+func (ht *hashTable) Upsize(newCapacity uint64) error {
+	if newCapacity <= ht.capacity {
+		return fmt.Errorf("newCapacity must be greater than current capacity")
+	}
+	newMask := newCapacity - 1
+	if (newCapacity & newMask) != 0 {
+		return fmt.Errorf("must be a power of two")
+	}
+
+	// Stash old entries and seal builder, effectively resetting the Buffer
+	oldEntries := ht.entries()
+	_ = ht.entriesBuilder.Finish()
+	// Allocate new buffer
+	ht.UpsizeBuffer(newCapacity)
+
+	for _, entry := range oldEntries {
+		if entry != nil {
+			// Dummy compare function will not be called
+			pFirst, pSecond := ht.lookup(HashTable_CompareKind_NoCompare, entry.h, ht.entries(), newMask,
+				func(payload interface{}) bool { return false })
+			// Lookup<NoCompare> (and CompareEntry<NoCompare>) ensure that an
+			// empty slots is always returned
+			if pSecond {
+				return fmt.Errorf("emply slot was not returned")
+			}
+			ht.entries()[pFirst] = entry
+		}
+	}
+	ht.capacity = newCapacity
+	ht.capacityMask = newMask
+
+	return nil
+}
+
+func (ht *hashTable) entries() []*Entry {
+	return ht.entriesBuilder.Values()
+}
+
+func (ht *hashTable) Lookup(h hash_t, cmpFunc CmpFunc) (*Entry, bool) {
+	pFirst, pSecond := ht.lookup(HashTable_CompareKind_DoCompare, h, ht.entries, ht.capacityMask, cmpFunc)
+	return ht.entries[pFirst], pSecond
+}
+
+// The workhorse lookup function
+func (ht *hashTable) lookup(cKind CompareKind, h hash_t, entries []*Entry, sizeMask uint64, cmpFunc CmpFunc) (uint64, bool) {
+	const perturbShift uint8 = 5
+
+	var index uint64
+	var perturb uint64
+
+	h = ht.fixHash(h)
+	index = uint64(h) & sizeMask
+	perturb = (uint64(h) >> perturbShift) + uint64(1)
+
+	for {
+		entry := entries[index]
+		if ht.CompareEntry(cKind, h, entry, cmpFunc) {
+			// Found
+			return index, true
+		}
+		if uint64(entry.h) == kSentinel {
+			// Empty slot
+			return index, false
+		}
+
+		// Perturbation logic inspired from CPython's set / dict object.
+		// The goal is that all 64 bits of the unmasked hash value eventually
+		// participate in the probing sequence, to minimize clustering.
+		index = (index + perturb) & sizeMask
+		perturb = (perturb >> perturbShift) + 1
+	}
+}
+
+func (*hashTable) fixHash(h hash_t) hash_t {
+	if h == hash_t(kSentinel) {
+		return hash_t(42)
+	}
+	return h
+}
+
+func (*hashTable) CompareEntry(cKind CompareKind, h hash_t, entry *Entry, cmpFunc CmpFunc) bool {
+	if cKind == HashTable_CompareKind_NoCompare {
+		return false
+	}
+	return entry.h == h && cmpFunc(entry.Payload)
+}
+
+func (ht *hashTable) Insert(entry *Entry, h hash_t, payload Payload) error {
+	if entry == nil {
+		return fmt.Errorf("Insert: entry is nil")
+	}
+	entry.h = ht.fixHash(h)
+	entry.Payload = payload
+	ht.size++
+
+	if ht.NeedUpsizing() {
+		// Resize less frequently since it is expensive
+		return ht.Upsize(ht.capacity * kLoadFactor * 2)
+	}
+	return nil
+}
+
+// Visit all non-empty entries in the table
+// The visit_func should have signature func(*Entry)
+func (ht *hashTable) VisitEntries(entry *Entry) {
+
+}
 
 type ScalarHelperTemplate struct {
 	Scalar
@@ -89,15 +271,16 @@ type ScalarHelperBase struct {
 }
 
 func (s *ScalarHelperBase) CompareScalars(u Scalar, v Scalar) bool {
-	switch s.Scalar.(type) {
-		// ScalarHelper specialization for reals
-	if math.IsNaN(ScalarToFloat64(u)) {
-		// XXX should we do a bit-precise comparison?
-		return math.IsNaN(ScalarToFloat64(v))
-	}
-	return u == v
-	}
-	return u == v
+	// switch s.Scalar.(type) {
+	// 	// ScalarHelper specialization for reals
+	// if math.IsNaN(ScalarToFloat64(u)) {
+	// 	// XXX should we do a bit-precise comparison?
+	// 	return math.IsNaN(ScalarToFloat64(v))
+	// }
+	// return u == v
+	// }
+	// return u == v
+	panic("not implemented")
 }
 
 func (s *ScalarHelperBase) ComputeHash(value *Scalar) hash_t {
@@ -130,7 +313,8 @@ func (s *ScalarHelper) ComputeHash(value *Scalar) hash_t {
 	}
 	if isFloatingPoint(value) {
 		// ScalarHelper specialization for reals
-		return s.computeHashReals(*value)
+		// return s.computeHashReals(*value)
+		panic("not implemented... is this even a thing?")
 	}
 
 	// default and string type
@@ -147,7 +331,7 @@ func (s *ScalarHelper) computeHashIntegral(value Scalar) hash_t {
 	// then byte-swapping (which is a single CPU instruction) allows the
 	// combined high and low bits to participate in the initial hash table index.
 	h := ScalarToUint64(value)
-	return bitutilext.ByteSwap64(multipliers[s.algNum] * h)
+	return hash_t(bitutilext.ByteSwap64(multipliers[s.AlgNum] * h))
 }
 
 func isIntegral(value interface{}) bool {
@@ -160,7 +344,7 @@ func isIntegral(value interface{}) bool {
 }
 
 func (s *ScalarHelper) computeHashReals(u Scalar, v Scalar) bool {
-
+	panic("not implemented")
 }
 
 func isFloatingPoint(value interface{}) bool {
@@ -195,7 +379,7 @@ type MemoTable interface {
 // index for each key.
 
 type Payload struct {
-	value Scalar
+	value     Scalar
 	memoIndex int32
 }
 
@@ -257,10 +441,85 @@ func (ScalarMemoTable) ComputeHash(value Scalar) hash_t {
 // Copy values starting from index `start` into `outData`.
 // Check the size in debug mode.
 func (s *ScalarMemoTable) CopyValues(start int32, outSize int64, outData []byte) {
-	s.hashTable.VisitEntries(func (entry *HashTableEntry) {
+	s.hashTable.VisitEntries(func(entry *HashTableEntry) {
 		index := entry.payload.memoIndex - start
 		if index >= 0 {
 			outData[index] = entry.payload.value
 		}
 	})
+}
+
+// Type specific class for a buffer builder to hold Entry structs.
+// type entryBufferBuilder struct {
+// 	// TODO(nickpoorman): Use Arrow TypedBufferBuilder instead of native array.
+// 	// array.BufferBuilder
+// 	entries []*Entry
+// }
+
+// func (b *entryBufferBuilder) Resize(elements int) {
+// 	enteries := make([]*Entry, len(b.entries), elements)
+// 	copy(enteries, b.entries)
+// 	b.entries = enteries
+// }
+
+// // func (b *entryBufferBuilder) AppendValues(v []Entry) {
+// // 	panic("not implemented")
+// // }
+
+// // func (b *entryBufferBuilder) AppendValue(v Entry) {
+// // 	panic("not implemented")
+// // }
+
+// func (b *entryBufferBuilder) Values() []*Entry {
+// 	return b.entries
+// }
+
+// // Reset and return the buffer
+// func (b *entryBufferBuilder) Finish() *memory.Buffer {
+// 	b.entries = make([]*Entry, 0)
+// 	return nil
+// }
+
+// // func (b *entryBufferBuilder) Value(i int) Entry {
+// // 	panic("not implemented")
+// // }
+
+// // func (b *entryBufferBuilder) Len() int {
+// // 	panic("not implemented")
+// // }
+
+type entryBufferBuilder struct {
+	array.BufferBuilder
+}
+
+func (b *entryBufferBuilder) Resize(elements int) {
+	enteries := make([]*Entry, len(b.entries), elements)
+	copy(enteries, b.entries)
+	b.entries = enteries
+}
+
+func (b *entryBufferBuilder) AppendValues(v []Entry) {
+	panic("not implemented")
+}
+
+func (b *entryBufferBuilder) AppendValue(v Entry) {
+	panic("not implemented")
+}
+
+func (b *entryBufferBuilder) Values() []*Entry {
+	return b.entries
+}
+
+// Reset and return the buffer
+func (b *entryBufferBuilder) Finish() *memory.Buffer {
+	b.entries = make([]*Entry, 0)
+	return nil
+}
+
+func (b *entryBufferBuilder) Value(i int) Entry {
+	panic("not implemented")
+}
+
+func (b *entryBufferBuilder) Len() int {
+	panic("not implemented")
 }
