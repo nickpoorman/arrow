@@ -52,6 +52,12 @@ func New(f float32) Num {
 	return Num{bits: (sn << 15) | uint16(res<<10) | fc}
 }
 
+// New creates a new half-precision floating point value from the provided
+// uint16 value.
+func FromUint16(u uint16) Num {
+	return Num{bits: u}
+}
+
 func (f Num) Float32() float32 {
 	sn := uint32((f.bits >> 15) & 0x1)
 	exp := (f.bits >> 10) & 0x1f

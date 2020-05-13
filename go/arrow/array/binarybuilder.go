@@ -143,7 +143,7 @@ func (b *BinaryBuilder) Value(i int) []byte {
 
 func (b *BinaryBuilder) init(capacity int) {
 	b.builder.init(capacity)
-	b.offsets.Resize((capacity + 1) * arrow.Int32SizeBytes)
+	b.offsets.resize((capacity + 1) * arrow.Int32SizeBytes)
 }
 
 // DataLen returns the number of bytes in the data array.
@@ -163,14 +163,14 @@ func (b *BinaryBuilder) Reserve(n int) {
 // by checking the capacity and resizing the data buffer if necessary.
 func (b *BinaryBuilder) ReserveData(n int) {
 	if b.values.capacity < b.values.length+n {
-		b.values.Resize(b.values.Len() + n)
+		b.values.resize(b.values.Len() + n)
 	}
 }
 
 // Resize adjusts the space allocated by b to n elements. If n is greater than b.Cap(),
 // additional memory will be allocated. If n is smaller, the allocated memory may be reduced.
 func (b *BinaryBuilder) Resize(n int) {
-	b.offsets.Resize((n + 1) * arrow.Int32SizeBytes)
+	b.offsets.resize((n + 1) * arrow.Int32SizeBytes)
 	b.builder.resize(n, b.init)
 }
 

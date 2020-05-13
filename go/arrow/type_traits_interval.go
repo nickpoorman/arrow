@@ -44,6 +44,11 @@ func (monthTraits) PutValue(b []byte, v MonthInterval) {
 	binary.LittleEndian.PutUint32(b, uint32(v))
 }
 
+// GetValue returns a single MonthInterval from the slice of bytes b.
+func (monthTraits) GetValue(b []byte) MonthInterval {
+	return MonthInterval(binary.LittleEndian.Uint32(b))
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type MonthInterval.
 //
 // NOTE: len(b) must be a multiple of MonthIntervalSizeBytes.
@@ -91,6 +96,14 @@ func (daytimeTraits) BytesRequired(n int) int { return DayTimeIntervalSizeBytes 
 func (daytimeTraits) PutValue(b []byte, v DayTimeInterval) {
 	binary.LittleEndian.PutUint32(b[0:4], uint32(v.Days))
 	binary.LittleEndian.PutUint32(b[4:8], uint32(v.Milliseconds))
+}
+
+// GetValue returns a single MonthInterval from the slice of bytes b.
+func (daytimeTraits) GetValue(b []byte) DayTimeInterval {
+	return DayTimeInterval{
+		Days:         int32(binary.LittleEndian.Uint32(b[0:4])),
+		Milliseconds: int32(binary.LittleEndian.Uint32(b[4:8])),
+	}
 }
 
 // CastFromBytes reinterprets the slice b to a slice of type DayTimeInterval.

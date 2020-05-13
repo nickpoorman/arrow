@@ -8,12 +8,12 @@ import (
 )
 
 type Scalar interface {
-	EqualityComparableScalar
+	ScalarEqualityComparable
 	// Returns a reader to the value. Note this has more overhead than ValueBytes()
 	ValueBytes() []byte
 }
 
-type EqualityComparableScalar interface {
+type ScalarEqualityComparable interface {
 	Equals(other Scalar) bool
 	NotEquals(other Scalar) bool
 }

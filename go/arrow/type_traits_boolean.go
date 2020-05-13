@@ -35,3 +35,8 @@ func (booleanTraits) PutValue(b []byte, v bool) {
 		b[0] = 0
 	}
 }
+
+// GetValue returns a single bool from the slice of bytes b.
+func (booleanTraits) GetValue(b []byte) bool {
+	return b[0] != 0
+}

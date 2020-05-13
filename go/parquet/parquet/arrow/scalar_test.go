@@ -3,10 +3,10 @@ package arrow
 import "testing"
 
 func TestScalarEquals(t *testing.T) {
-	var a EqualityComparable
-	var b EqualityComparable
-	a = ScalarInt123(1)
-	b = ScalarInt123(2)
+	var a Scalar
+	var b Scalar
+	a = NewInt64ScalarPrimitive(1)
+	b = NewInt64ScalarPrimitive(2)
 
 	a.Equals(b)
 }

@@ -42,6 +42,11 @@ func (float16Traits) PutValue(b []byte, v float16.Num) {
 	binary.LittleEndian.PutUint16(b, uint16(v.Uint16()))
 }
 
+// GetValue returns a single float16.Num from the slice of bytes b.
+func (float16Traits) GetValue(b []byte) float16.Num {
+	return float16.FromUint16(binary.LittleEndian.Uint16(b))
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type uint16.
 //
 // NOTE: len(b) must be a multiple of Uint16SizeBytes.

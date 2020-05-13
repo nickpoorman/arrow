@@ -19,11 +19,11 @@ package array
 import "github.com/apache/arrow/go/arrow/memory"
 
 type byteBufferBuilder struct {
-	BufferBuilder
+	bufferBuilder
 }
 
 func newByteBufferBuilder(mem memory.Allocator) *byteBufferBuilder {
-	return &byteBufferBuilder{BufferBuilder: BufferBuilder{refCount: 1, mem: mem}}
+	return &byteBufferBuilder{bufferBuilder: bufferBuilder{refCount: 1, mem: mem}}
 }
 
 func (b *byteBufferBuilder) Values() []byte   { return b.Bytes() }

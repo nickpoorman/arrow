@@ -36,6 +36,11 @@ func TestInt64Traits(t *testing.T) {
 		beg := i * arrow.Int64SizeBytes
 		end := (i + 1) * arrow.Int64SizeBytes
 		arrow.Int64Traits.PutValue(b2[beg:end], int64(i))
+
+		if got, want := arrow.Int64Traits.GetValue(b2[beg:end]),
+			int64(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -70,6 +75,11 @@ func TestUint64Traits(t *testing.T) {
 		beg := i * arrow.Uint64SizeBytes
 		end := (i + 1) * arrow.Uint64SizeBytes
 		arrow.Uint64Traits.PutValue(b2[beg:end], uint64(i))
+
+		if got, want := arrow.Uint64Traits.GetValue(b2[beg:end]),
+			uint64(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -104,6 +114,11 @@ func TestFloat64Traits(t *testing.T) {
 		beg := i * arrow.Float64SizeBytes
 		end := (i + 1) * arrow.Float64SizeBytes
 		arrow.Float64Traits.PutValue(b2[beg:end], float64(i))
+
+		if got, want := arrow.Float64Traits.GetValue(b2[beg:end]),
+			float64(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -138,6 +153,11 @@ func TestInt32Traits(t *testing.T) {
 		beg := i * arrow.Int32SizeBytes
 		end := (i + 1) * arrow.Int32SizeBytes
 		arrow.Int32Traits.PutValue(b2[beg:end], int32(i))
+
+		if got, want := arrow.Int32Traits.GetValue(b2[beg:end]),
+			int32(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -172,6 +192,11 @@ func TestUint32Traits(t *testing.T) {
 		beg := i * arrow.Uint32SizeBytes
 		end := (i + 1) * arrow.Uint32SizeBytes
 		arrow.Uint32Traits.PutValue(b2[beg:end], uint32(i))
+
+		if got, want := arrow.Uint32Traits.GetValue(b2[beg:end]),
+			uint32(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -206,6 +231,11 @@ func TestFloat32Traits(t *testing.T) {
 		beg := i * arrow.Float32SizeBytes
 		end := (i + 1) * arrow.Float32SizeBytes
 		arrow.Float32Traits.PutValue(b2[beg:end], float32(i))
+
+		if got, want := arrow.Float32Traits.GetValue(b2[beg:end]),
+			float32(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -240,6 +270,11 @@ func TestInt16Traits(t *testing.T) {
 		beg := i * arrow.Int16SizeBytes
 		end := (i + 1) * arrow.Int16SizeBytes
 		arrow.Int16Traits.PutValue(b2[beg:end], int16(i))
+
+		if got, want := arrow.Int16Traits.GetValue(b2[beg:end]),
+			int16(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -274,6 +309,11 @@ func TestUint16Traits(t *testing.T) {
 		beg := i * arrow.Uint16SizeBytes
 		end := (i + 1) * arrow.Uint16SizeBytes
 		arrow.Uint16Traits.PutValue(b2[beg:end], uint16(i))
+
+		if got, want := arrow.Uint16Traits.GetValue(b2[beg:end]),
+			uint16(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -308,6 +348,11 @@ func TestInt8Traits(t *testing.T) {
 		beg := i * arrow.Int8SizeBytes
 		end := (i + 1) * arrow.Int8SizeBytes
 		arrow.Int8Traits.PutValue(b2[beg:end], int8(i))
+
+		if got, want := arrow.Int8Traits.GetValue(b2[beg:end]),
+			int8(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -342,6 +387,11 @@ func TestUint8Traits(t *testing.T) {
 		beg := i * arrow.Uint8SizeBytes
 		end := (i + 1) * arrow.Uint8SizeBytes
 		arrow.Uint8Traits.PutValue(b2[beg:end], uint8(i))
+
+		if got, want := arrow.Uint8Traits.GetValue(b2[beg:end]),
+			uint8(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -376,6 +426,11 @@ func TestTimestampTraits(t *testing.T) {
 		beg := i * arrow.TimestampSizeBytes
 		end := (i + 1) * arrow.TimestampSizeBytes
 		arrow.TimestampTraits.PutValue(b2[beg:end], arrow.Timestamp(i))
+
+		if got, want := arrow.TimestampTraits.GetValue(b2[beg:end]),
+			arrow.Timestamp(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -410,6 +465,11 @@ func TestTime32Traits(t *testing.T) {
 		beg := i * arrow.Time32SizeBytes
 		end := (i + 1) * arrow.Time32SizeBytes
 		arrow.Time32Traits.PutValue(b2[beg:end], arrow.Time32(i))
+
+		if got, want := arrow.Time32Traits.GetValue(b2[beg:end]),
+			arrow.Time32(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -444,6 +504,11 @@ func TestTime64Traits(t *testing.T) {
 		beg := i * arrow.Time64SizeBytes
 		end := (i + 1) * arrow.Time64SizeBytes
 		arrow.Time64Traits.PutValue(b2[beg:end], arrow.Time64(i))
+
+		if got, want := arrow.Time64Traits.GetValue(b2[beg:end]),
+			arrow.Time64(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -478,6 +543,11 @@ func TestDate32Traits(t *testing.T) {
 		beg := i * arrow.Date32SizeBytes
 		end := (i + 1) * arrow.Date32SizeBytes
 		arrow.Date32Traits.PutValue(b2[beg:end], arrow.Date32(i))
+
+		if got, want := arrow.Date32Traits.GetValue(b2[beg:end]),
+			arrow.Date32(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -512,6 +582,11 @@ func TestDate64Traits(t *testing.T) {
 		beg := i * arrow.Date64SizeBytes
 		end := (i + 1) * arrow.Date64SizeBytes
 		arrow.Date64Traits.PutValue(b2[beg:end], arrow.Date64(i))
+
+		if got, want := arrow.Date64Traits.GetValue(b2[beg:end]),
+			arrow.Date64(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -546,6 +621,11 @@ func TestDurationTraits(t *testing.T) {
 		beg := i * arrow.DurationSizeBytes
 		end := (i + 1) * arrow.DurationSizeBytes
 		arrow.DurationTraits.PutValue(b2[beg:end], arrow.Duration(i))
+
+		if got, want := arrow.DurationTraits.GetValue(b2[beg:end]),
+			arrow.Duration(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {

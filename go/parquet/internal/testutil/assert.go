@@ -33,6 +33,13 @@ func AssertDeepEqM(t *testing.T, got, want interface{}, msg string) {
 	}
 }
 
+func AssertNotDeepEq(t *testing.T, got, want interface{}) {
+	t.Helper()
+	if reflect.DeepEqual(got, want) {
+		t.Errorf("AssertNotDeepEq: got=%+v; !want=%+v\n", got, want)
+	}
+}
+
 func AssertEqString(t *testing.T, got, want string) {
 	t.Helper()
 	if got != want {

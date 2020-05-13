@@ -156,7 +156,7 @@
         "DefaultDataType": "(*arrow.ListType)(nil)"
     },
     {
-        "T": "largeList",
+        "T": "LargeList",
         "CType": "array.Interface",
         "DefaultDataType": "UnsupportedTypes.LargeList"
     },

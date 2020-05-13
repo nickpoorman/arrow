@@ -61,6 +61,11 @@ func (int64Traits) PutValue(b []byte, v int64) {
 	binary.LittleEndian.PutUint64(b, uint64(v))
 }
 
+// GetValue returns a single int64 from the slice of bytes b.
+func (int64Traits) GetValue(b []byte) int64 {
+	return int64(binary.LittleEndian.Uint64(b))
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type int64.
 //
 // NOTE: len(b) must be a multiple of Int64SizeBytes.
@@ -107,6 +112,11 @@ func (uint64Traits) BytesRequired(n int) int { return Uint64SizeBytes * n }
 // PutValue
 func (uint64Traits) PutValue(b []byte, v uint64) {
 	binary.LittleEndian.PutUint64(b, uint64(v))
+}
+
+// GetValue returns a single uint64 from the slice of bytes b.
+func (uint64Traits) GetValue(b []byte) uint64 {
+	return uint64(binary.LittleEndian.Uint64(b))
 }
 
 // CastFromBytes reinterprets the slice b to a slice of type uint64.
@@ -157,6 +167,11 @@ func (float64Traits) PutValue(b []byte, v float64) {
 	binary.LittleEndian.PutUint64(b, math.Float64bits(v))
 }
 
+// GetValue returns a single float64 from the slice of bytes b.
+func (float64Traits) GetValue(b []byte) float64 {
+	return math.Float64frombits(binary.LittleEndian.Uint64(b))
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type float64.
 //
 // NOTE: len(b) must be a multiple of Float64SizeBytes.
@@ -203,6 +218,11 @@ func (int32Traits) BytesRequired(n int) int { return Int32SizeBytes * n }
 // PutValue
 func (int32Traits) PutValue(b []byte, v int32) {
 	binary.LittleEndian.PutUint32(b, uint32(v))
+}
+
+// GetValue returns a single int32 from the slice of bytes b.
+func (int32Traits) GetValue(b []byte) int32 {
+	return int32(binary.LittleEndian.Uint32(b))
 }
 
 // CastFromBytes reinterprets the slice b to a slice of type int32.
@@ -253,6 +273,11 @@ func (uint32Traits) PutValue(b []byte, v uint32) {
 	binary.LittleEndian.PutUint32(b, uint32(v))
 }
 
+// GetValue returns a single uint32 from the slice of bytes b.
+func (uint32Traits) GetValue(b []byte) uint32 {
+	return uint32(binary.LittleEndian.Uint32(b))
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type uint32.
 //
 // NOTE: len(b) must be a multiple of Uint32SizeBytes.
@@ -299,6 +324,11 @@ func (float32Traits) BytesRequired(n int) int { return Float32SizeBytes * n }
 // PutValue
 func (float32Traits) PutValue(b []byte, v float32) {
 	binary.LittleEndian.PutUint32(b, math.Float32bits(v))
+}
+
+// GetValue returns a single float32 from the slice of bytes b.
+func (float32Traits) GetValue(b []byte) float32 {
+	return math.Float32frombits(binary.LittleEndian.Uint32(b))
 }
 
 // CastFromBytes reinterprets the slice b to a slice of type float32.
@@ -349,6 +379,11 @@ func (int16Traits) PutValue(b []byte, v int16) {
 	binary.LittleEndian.PutUint16(b, uint16(v))
 }
 
+// GetValue returns a single int16 from the slice of bytes b.
+func (int16Traits) GetValue(b []byte) int16 {
+	return int16(binary.LittleEndian.Uint16(b))
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type int16.
 //
 // NOTE: len(b) must be a multiple of Int16SizeBytes.
@@ -395,6 +430,11 @@ func (uint16Traits) BytesRequired(n int) int { return Uint16SizeBytes * n }
 // PutValue
 func (uint16Traits) PutValue(b []byte, v uint16) {
 	binary.LittleEndian.PutUint16(b, uint16(v))
+}
+
+// GetValue returns a single uint16 from the slice of bytes b.
+func (uint16Traits) GetValue(b []byte) uint16 {
+	return uint16(binary.LittleEndian.Uint16(b))
 }
 
 // CastFromBytes reinterprets the slice b to a slice of type uint16.
@@ -445,6 +485,11 @@ func (int8Traits) PutValue(b []byte, v int8) {
 	b[0] = byte(v)
 }
 
+// GetValue returns a single int8 from the slice of bytes b.
+func (int8Traits) GetValue(b []byte) int8 {
+	return int8(b[0])
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type int8.
 //
 // NOTE: len(b) must be a multiple of Int8SizeBytes.
@@ -491,6 +536,11 @@ func (uint8Traits) BytesRequired(n int) int { return Uint8SizeBytes * n }
 // PutValue
 func (uint8Traits) PutValue(b []byte, v uint8) {
 	b[0] = byte(v)
+}
+
+// GetValue returns a single uint8 from the slice of bytes b.
+func (uint8Traits) GetValue(b []byte) uint8 {
+	return uint8(b[0])
 }
 
 // CastFromBytes reinterprets the slice b to a slice of type uint8.
@@ -541,6 +591,11 @@ func (timestampTraits) PutValue(b []byte, v Timestamp) {
 	binary.LittleEndian.PutUint64(b, uint64(v))
 }
 
+// GetValue returns a single Timestamp from the slice of bytes b.
+func (timestampTraits) GetValue(b []byte) Timestamp {
+	return Timestamp(binary.LittleEndian.Uint64(b))
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type Timestamp.
 //
 // NOTE: len(b) must be a multiple of TimestampSizeBytes.
@@ -587,6 +642,11 @@ func (time32Traits) BytesRequired(n int) int { return Time32SizeBytes * n }
 // PutValue
 func (time32Traits) PutValue(b []byte, v Time32) {
 	binary.LittleEndian.PutUint32(b, uint32(v))
+}
+
+// GetValue returns a single Time32 from the slice of bytes b.
+func (time32Traits) GetValue(b []byte) Time32 {
+	return Time32(binary.LittleEndian.Uint32(b))
 }
 
 // CastFromBytes reinterprets the slice b to a slice of type Time32.
@@ -637,6 +697,11 @@ func (time64Traits) PutValue(b []byte, v Time64) {
 	binary.LittleEndian.PutUint64(b, uint64(v))
 }
 
+// GetValue returns a single Time64 from the slice of bytes b.
+func (time64Traits) GetValue(b []byte) Time64 {
+	return Time64(binary.LittleEndian.Uint64(b))
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type Time64.
 //
 // NOTE: len(b) must be a multiple of Time64SizeBytes.
@@ -683,6 +748,11 @@ func (date32Traits) BytesRequired(n int) int { return Date32SizeBytes * n }
 // PutValue
 func (date32Traits) PutValue(b []byte, v Date32) {
 	binary.LittleEndian.PutUint32(b, uint32(v))
+}
+
+// GetValue returns a single Date32 from the slice of bytes b.
+func (date32Traits) GetValue(b []byte) Date32 {
+	return Date32(binary.LittleEndian.Uint32(b))
 }
 
 // CastFromBytes reinterprets the slice b to a slice of type Date32.
@@ -733,6 +803,11 @@ func (date64Traits) PutValue(b []byte, v Date64) {
 	binary.LittleEndian.PutUint64(b, uint64(v))
 }
 
+// GetValue returns a single Date64 from the slice of bytes b.
+func (date64Traits) GetValue(b []byte) Date64 {
+	return Date64(binary.LittleEndian.Uint64(b))
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type Date64.
 //
 // NOTE: len(b) must be a multiple of Date64SizeBytes.
@@ -779,6 +854,11 @@ func (durationTraits) BytesRequired(n int) int { return DurationSizeBytes * n }
 // PutValue
 func (durationTraits) PutValue(b []byte, v Duration) {
 	binary.LittleEndian.PutUint64(b, uint64(v))
+}
+
+// GetValue returns a single Duration from the slice of bytes b.
+func (durationTraits) GetValue(b []byte) Duration {
+	return Duration(binary.LittleEndian.Uint64(b))
 }
 
 // CastFromBytes reinterprets the slice b to a slice of type Duration.

@@ -12,6 +12,8 @@ import (
 	"github.com/nickpoorman/arrow-parquet-go/parquet/arrow"
 )
 
+var hashSeed = maphash.MakeSeed()
+
 // XXX add a HashEq<ArrowType> struct with both hash and compare functions?
 
 // ----------------------------------------------------------------------
@@ -27,7 +29,8 @@ type HashTableEntry struct {
 	payload interface{}
 }
 
-func (e HashTableEntry) bool() bool { return uint64(e.h) != kSentinel }
+// An entry is valid if the hash is different from the sentinel value
+func (e HashTableEntry) bool() bool { return e.h != kSentinel }
 
 type HashTableCmpFunc func(interface{}) bool
 
@@ -59,7 +62,7 @@ type hashTable struct {
 	entriesBuilder entryBufferBuilder
 }
 
-func NewHashTable(pool *memory.Allocator, capacity uint64) *hashTable {
+func NewHashTable(pool memory.Allocator, capacity uint64) *hashTable {
 	debug.Assert(pool != nil, "Assert: pool != nil")
 	ht := &hashTable{}
 	// Minimum of 32 elements
@@ -83,6 +86,12 @@ func (ht *hashTable) NeedUpsizing() bool {
 
 func (ht *hashTable) UpsizeBuffer(capacity uint64) {
 	ht.entriesBuilder.Resize(int(capacity))
+
+	// TODO(nickpoorman): Do we need to memset this to zero?
+	// entries := ht.entriesBuilder.Values()
+	// for i := range entries {
+	// 	entries[i] = &HashTableEntry{}
+	// }
 }
 
 func (ht *hashTable) Upsize(newCapacity uint64) error {
@@ -101,7 +110,7 @@ func (ht *hashTable) Upsize(newCapacity uint64) error {
 	ht.UpsizeBuffer(newCapacity)
 
 	for _, entry := range oldEntries {
-		if entry != nil {
+		if entry.bool() {
 			// Dummy compare function will not be called
 			pFirst, pSecond := ht.lookup(HashTable_CompareKind_NoCompare, entry.h, ht.entries(), newMask,
 				func(payload interface{}) bool { return false })
@@ -110,6 +119,7 @@ func (ht *hashTable) Upsize(newCapacity uint64) error {
 			if pSecond {
 				return fmt.Errorf("emply slot was not returned")
 			}
+			fmt.Printf("setting entry: %v\n", entry)
 			ht.entries()[pFirst] = entry
 		}
 	}
@@ -119,17 +129,17 @@ func (ht *hashTable) Upsize(newCapacity uint64) error {
 	return nil
 }
 
-func (ht *hashTable) entries() []*HashTableEntry {
+func (ht *hashTable) entries() []HashTableEntry {
 	return ht.entriesBuilder.Values()
 }
 
 func (ht *hashTable) Lookup(h uint64, cmpFunc HashTableCmpFunc) (*HashTableEntry, bool) {
 	pFirst, pSecond := ht.lookup(HashTable_CompareKind_DoCompare, h, ht.entries(), ht.capacityMask, cmpFunc)
-	return ht.entries()[pFirst], pSecond
+	return &ht.entries()[pFirst], pSecond
 }
 
 // The workhorse lookup function
-func (ht *hashTable) lookup(cKind CompareKind, h uint64, entries []*HashTableEntry, sizeMask uint64, cmpFunc HashTableCmpFunc) (uint64, bool) {
+func (ht *hashTable) lookup(cKind CompareKind, h uint64, entries []HashTableEntry, sizeMask uint64, cmpFunc HashTableCmpFunc) (uint64, bool) {
 	const perturbShift uint8 = 5
 
 	var index uint64
@@ -142,10 +152,12 @@ func (ht *hashTable) lookup(cKind CompareKind, h uint64, entries []*HashTableEnt
 	for {
 		entry := entries[index]
 		if ht.CompareEntry(cKind, h, entry, cmpFunc) {
+			fmt.Printf("found it [%d]: entries: %+v | entry: %+v\n", index, entries, entry)
 			// Found
 			return index, true
 		}
-		if uint64(entry.h) == kSentinel {
+		if entry.h == kSentinel {
+			fmt.Printf("empty slot [%d]: entries: %+v | entry: %+v\n", index, entries, entry)
 			// Empty slot
 			return index, false
 		}
@@ -165,17 +177,20 @@ func (*hashTable) fixHash(h uint64) uint64 {
 	return h
 }
 
-func (*hashTable) CompareEntry(cKind CompareKind, h uint64, entry *HashTableEntry, cmpFunc HashTableCmpFunc) bool {
+func (*hashTable) CompareEntry(cKind CompareKind, h uint64, entry HashTableEntry, cmpFunc HashTableCmpFunc) bool {
 	if cKind == HashTable_CompareKind_NoCompare {
 		return false
 	}
+	fmt.Printf("CompareEntry: entry.h: %d | h: %d\n", entry.h, h)
 	return entry.h == h && cmpFunc(entry.payload)
 }
 
+// Insert takes a pointer to an entry that it will set.
 func (ht *hashTable) Insert(entry *HashTableEntry, h uint64, payload interface{}) error {
-	if entry == nil {
-		return fmt.Errorf("Insert: entry is nil")
+	if entry.bool() {
+		return fmt.Errorf("Insert: Entry must be empty before inserting: %+v", entry)
 	}
+	fmt.Printf("Inserting hash: %d\n", h)
 	entry.h = ht.fixHash(h)
 	entry.payload = payload
 	ht.size++
@@ -192,8 +207,8 @@ func (ht *hashTable) Insert(entry *HashTableEntry, h uint64, payload interface{}
 func (ht *hashTable) VisitEntries(visitFunc func(*HashTableEntry)) {
 	for i := uint64(0); i < ht.capacity; i++ {
 		entry := ht.entries()[i]
-		if entry != nil {
-			visitFunc(entry)
+		if entry.bool() {
+			visitFunc(&entry)
 		}
 	}
 }
@@ -202,22 +217,22 @@ func (ht *hashTable) VisitEntries(visitFunc func(*HashTableEntry)) {
 type entryBufferBuilder struct {
 	// TODO(nickpoorman): Use Arrow TypedBufferBuilder instead of native array.
 	// array.BufferBuilder
-	entries []*HashTableEntry
+	entries []HashTableEntry
 }
 
 func (b *entryBufferBuilder) Resize(elements int) {
-	enteries := make([]*HashTableEntry, elements)
+	enteries := make([]HashTableEntry, elements)
 	copy(enteries, b.entries)
 	b.entries = enteries
 }
 
-func (b *entryBufferBuilder) Values() []*HashTableEntry {
+func (b *entryBufferBuilder) Values() []HashTableEntry {
 	return b.entries
 }
 
 // Reset and return the buffer
 func (b *entryBufferBuilder) Finish() *memory.Buffer {
-	b.entries = make([]*HashTableEntry, 0)
+	b.entries = make([]HashTableEntry, 0)
 	return nil
 }
 
@@ -231,7 +246,10 @@ func OnNotFoundNoOp(memoIndex int32) {}
 
 type MemoTable interface {
 	Size() int32
-	GetOrInsert(value interface{}, onFound func(memoIndex int32), onNotFound func(memoIndex int32), outMemoIndex *int32) error
+	Get(value arrow.Scalar) (int32, error)
+	GetOrInsert(value arrow.Scalar, onFound func(int32), onNotFound func(int32)) (int32, error)
+	GetNull() int32
+	GetOrInsertNull(onFound func(int32), onNotFound func(int32)) int32
 	CopyValues(start int32, outSize int64, outData interface{})
 }
 
@@ -258,15 +276,16 @@ type ScalarMemoTable struct {
 	nullIndex int32 // default: kKeyNotFound
 }
 
-func NewScalarMemoTable() *ScalarMemoTable {
+func NewScalarMemoTable(pool memory.Allocator, entries int /* default: 0 */) *ScalarMemoTable {
 	return &ScalarMemoTable{
+		hashTable: NewHashTable(pool, uint64(entries)),
 		nullIndex: kKeyNotFound,
 	}
 }
 
 // The number of entries in the memo table +1 if null was added.
 // (which is also 1 + the largest memo index)
-func (s ScalarMemoTable) size() int32 {
+func (s ScalarMemoTable) Size() int32 {
 	nullAdded := int32(0)
 	if s.GetNull() != kKeyNotFound {
 		nullAdded = 1
@@ -276,6 +295,7 @@ func (s ScalarMemoTable) size() int32 {
 
 func (s *ScalarMemoTable) Get(value arrow.Scalar) (int32, error) {
 	cmpFunc := func(payload interface{}) bool {
+		fmt.Printf("Called compare func with payload: %+v\n", payload.(*scalarPayload))
 		return CompareScalars(payload.(*scalarPayload).value, value)
 	}
 	h, err := s.ComputeHash(value)
@@ -291,8 +311,8 @@ func (s *ScalarMemoTable) Get(value arrow.Scalar) (int32, error) {
 }
 
 func (s *ScalarMemoTable) GetOrInsert(
-	value arrow.Scalar, onFound func(int32), onNotFound func(int32), outMemoIndex int32,
-) (int32, error) {
+	value arrow.Scalar, onFound func(int32), onNotFound func(int32)) (int32, error) {
+
 	cmpFunc := func(payload interface{}) bool {
 		return CompareScalars(value, payload.(*scalarPayload).value)
 	}
@@ -300,24 +320,45 @@ func (s *ScalarMemoTable) GetOrInsert(
 	if err != nil {
 		return 0, err
 	}
+	fmt.Println("GetOrInsert: h:", h)
 	hashTableEntry, ok := s.hashTable.Lookup(h, cmpFunc)
 	var memoIndex int32
 	if ok {
 		memoIndex = hashTableEntry.payload.(*scalarPayload).memoIndex
-		onFound(memoIndex)
+		if onFound != nil {
+			onFound(memoIndex)
+		}
 	} else {
-		memoIndex = s.size()
+		memoIndex = s.Size()
 		if err := s.hashTable.Insert(
 			hashTableEntry, h, newScalarPayload(value, memoIndex)); err != nil {
 			return memoIndex, err
 		}
-		onNotFound(memoIndex)
+		if onNotFound != nil {
+			onNotFound(memoIndex)
+		}
 	}
 	return memoIndex, nil
 }
 
 func (s *ScalarMemoTable) GetNull() int32 {
 	return s.nullIndex
+}
+
+func (s *ScalarMemoTable) GetOrInsertNull(onFound func(int32), onNotFound func(int32)) int32 {
+	memoIndex := s.GetNull()
+	if memoIndex != kKeyNotFound {
+		if onFound != nil {
+			onFound(memoIndex)
+		}
+	} else {
+		memoIndex = s.Size()
+		s.nullIndex = memoIndex
+		if onNotFound != nil {
+			onNotFound(memoIndex)
+		}
+	}
+	return memoIndex
 }
 
 func (ScalarMemoTable) ComputeHash(value arrow.Scalar) (uint64, error) {
@@ -344,7 +385,19 @@ func (s *ScalarMemoTable) copyValues(start int32, outSize int64, outData []arrow
 
 func ScalarComputeHash(scalar arrow.Scalar) (uint64, error) {
 	h1 := new(maphash.Hash)
+	h1.SetSeed(hashSeed)
 	_, err := h1.Write(scalar.ValueBytes())
+	if err != nil {
+		return 0, err
+	}
+	return h1.Sum64(), nil
+}
+
+func ScalarComputeStringHash(data []byte) (uint64, error) {
+	// TODO(nickpoorman): Try implementing the C++ algorithm and benchmark for speed
+	h1 := new(maphash.Hash)
+	h1.SetSeed(hashSeed)
+	_, err := h1.Write(data)
 	if err != nil {
 		return 0, err
 	}
@@ -358,6 +411,7 @@ func CompareScalars(left, right arrow.Scalar) bool {
 			return math.IsNaN(scalarToFloat64(right))
 		}
 	}
+	fmt.Printf("checking left and right equals: left %+v | right %+v\n", left, right)
 	return left.Equals(right)
 }
 
@@ -382,3 +436,7 @@ func scalarToFloat64(scalar arrow.Scalar) float64 {
 		panic(fmt.Sprintf("scalarToFloat64: unknown Scalar type: %T", scalar))
 	}
 }
+
+var (
+	_ MemoTable = (*ScalarMemoTable)(nil)
+)

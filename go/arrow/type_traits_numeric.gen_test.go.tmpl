@@ -36,6 +36,11 @@ func Test{{.Name}}Traits(t *testing.T) {
 		beg := i * arrow.{{.Name}}SizeBytes
 		end := (i + 1) * arrow.{{.Name}}SizeBytes
 		arrow.{{.Name}}Traits.PutValue(b2[beg:end], {{or .QualifiedType .Type}}(i))
+
+		if got, want := arrow.{{.Name}}Traits.GetValue(b2[beg:end]),
+			{{or .QualifiedType .Type}}(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {

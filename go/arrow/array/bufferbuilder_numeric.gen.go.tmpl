@@ -26,11 +26,11 @@ import (
 {{$TypeNamePrefix := .Name}}
 {{/* {{if .Opt.BufferBuilder}} */}}
 type {{$TypeNamePrefix}}BufferBuilder struct {
-	BufferBuilder
+	bufferBuilder
 }
 
 func New{{.Name}}BufferBuilder(mem memory.Allocator) *{{$TypeNamePrefix}}BufferBuilder {
-	return &{{$TypeNamePrefix}}BufferBuilder{BufferBuilder:BufferBuilder{refCount: 1, mem:mem}}
+	return &{{$TypeNamePrefix}}BufferBuilder{bufferBuilder:bufferBuilder{refCount: 1, mem:mem}}
 }
 
 // AppendValues appends the contents of v to the buffer, growing the buffer as needed.

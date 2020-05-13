@@ -22,13 +22,63 @@ type {{.T}}Scalar struct {
 func New{{.T}}Scalar(value {{.CType}}, dataType arrow.DataType) {{.T}}Scalar {
 	{{- if .DefaultDataType}}
 	if dataType == nil {
-		dataType = arrow.PrimitiveTypes.Int64
+		dataType = {{.DefaultDataType}}
+	}
+	{{- end}}
+	return {{.T}}Scalar{
+		isValid: true,
+		dataType: dataType,
+		value: value,
+	}
+}
+
+func New{{.T}}ScalarInvalid(dataType arrow.DataType) {{.T}}Scalar {
+	{{- if .DefaultDataType}}
+	if dataType == nil {
+		dataType = {{.DefaultDataType}}
 	}
 	{{- end}}
 	return {{.T}}Scalar{
 		isValid: false,
 		dataType: dataType,
 	}
+}
+
+{{/* TODO(nickpoorman): Implement these */}}
+{{- if eq .CType "*memory.Buffer"}}
+{{/* panic("dataType cannot be nil") */}}
+{{- else if contains .DefaultDataType "UnsupportedTypes"}}
+{{/* panic("dataType cannot be nil") */}}
+{{- else if eq .T "FixedSizeList"}}
+{{/* panic("dataType cannot be nil") */}}
+{{- else if eq .T "List"}}
+{{/* panic("dataType cannot be nil") */}}
+{{- else}}
+func New{{.T}}ScalarPrimitive(value {{.CType}}) {{.T}}Scalar {
+	return {{.T}}Scalar{
+		isValid: true,
+		dataType: {{.DefaultDataType}},
+		value: value,
+	}
+}
+{{- end}}
+
+
+
+func New{{.T}}ScalarBytes(value []byte, dataType arrow.DataType) {{.T}}Scalar {
+	{{- if eq .CType "*memory.Buffer"}}
+	return New{{.T}}Scalar(memory.NewBufferBytes(value), dataType)
+	{{- else if contains .DefaultDataType "UnsupportedTypes"}}
+	panic("not implemented")
+	{{- else if eq .T "FixedSizeList"}}
+	// TODO(nickpoorman): implement
+	panic("not implemented")
+	{{- else if eq .T "List"}}
+	// TODO(nickpoorman): implement
+	panic("not implemented")
+	{{- else}}
+	return New{{.T}}Scalar(arrow.{{.T}}Traits.GetValue(value), dataType)
+	{{- end}}
 }
 
 func (s {{.T}}Scalar) Equals(other Scalar) bool {
