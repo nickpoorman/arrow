@@ -11,6 +11,8 @@ type Scalar interface {
 	ScalarEqualityComparable
 	// Returns a reader to the value. Note this has more overhead than ValueBytes()
 	ValueBytes() []byte
+	DataType() arrow.DataType
+	IsValid() bool
 }
 
 type ScalarEqualityComparable interface {
@@ -68,6 +70,9 @@ type NullScalar struct {
 }
 
 func NewNullScalar(dataType arrow.DataType) NullScalar {
+	if dataType == nil {
+		dataType = arrow.Null
+	}
 	return NullScalar{
 		dataType: dataType,
 	}
@@ -87,6 +92,14 @@ func (s NullScalar) NotEquals(other Scalar) bool {
 
 func (s NullScalar) ValueBytes() []byte {
 	panic("not implemented")
+}
+
+func (s NullScalar) DataType() arrow.DataType {
+	return s.dataType
+}
+
+func (s NullScalar) IsValid() bool {
+	return false
 }
 
 type StructScalar struct {
@@ -112,8 +125,11 @@ func (s StructScalar) Equals(other Scalar) bool {
 	if !ok {
 		return false
 	}
+	if len(s.value) != len(right.value) {
+		return false
+	}
 	for i := range right.value {
-		if s.value[i] != right.value[i] {
+		if s.value[i].NotEquals(right.value[i]) {
 			return false
 		}
 	}
@@ -126,6 +142,14 @@ func (s StructScalar) NotEquals(other Scalar) bool {
 
 func (s StructScalar) ValueBytes() []byte {
 	panic("not implemented")
+}
+
+func (s StructScalar) DataType() arrow.DataType {
+	return s.dataType
+}
+
+func (s StructScalar) IsValid() bool {
+	return s.isValid
 }
 
 type UnionScalar struct {
@@ -147,6 +171,7 @@ func NewUnionScalar(value interface{}, dataType arrow.DataType, isValid bool) Un
 }
 
 func (s UnionScalar) Equals(other Scalar) bool {
+	panic("not implemented")
 	right, ok := other.(UnionScalar)
 	return ok && s.value == right.value
 }
@@ -157,6 +182,14 @@ func (s UnionScalar) NotEquals(other Scalar) bool {
 
 func (s UnionScalar) ValueBytes() []byte {
 	panic("not implemented")
+}
+
+func (s UnionScalar) DataType() arrow.DataType {
+	return s.dataType
+}
+
+func (s UnionScalar) IsValid() bool {
+	return s.isValid
 }
 
 type DictionaryScalar struct {
@@ -180,7 +213,16 @@ func NewDictionaryScalar(value *Scalar, dataType arrow.DataType, isValid bool) D
 
 func (s DictionaryScalar) Equals(other Scalar) bool {
 	right, ok := other.(DictionaryScalar)
-	return ok && s.value == right.value
+	if !ok {
+		return false
+	}
+	if s.value == nil && right.value == nil {
+		return true
+	}
+	if s.value == nil || right.value == nil {
+		return false
+	}
+	return (*s.value).Equals(*right.value)
 }
 
 func (s DictionaryScalar) NotEquals(other Scalar) bool {
@@ -189,6 +231,14 @@ func (s DictionaryScalar) NotEquals(other Scalar) bool {
 
 func (s DictionaryScalar) ValueBytes() []byte {
 	panic("not implemented")
+}
+
+func (s DictionaryScalar) DataType() arrow.DataType {
+	return s.dataType
+}
+
+func (s DictionaryScalar) IsValid() bool {
+	return s.isValid
 }
 
 type ExtensionScalar struct {
@@ -222,8 +272,12 @@ func (s ExtensionScalar) ValueBytes() []byte {
 	panic("not implemented")
 }
 
-func MakeNullScalar(dataType arrow.DataType) Scalar {
-	panic("not implemented")
+func (s ExtensionScalar) DataType() arrow.DataType {
+	return s.dataType
+}
+
+func (s ExtensionScalar) IsValid() bool {
+	return s.isValid
 }
 
 func CheckBufferLength(t *arrow.FixedSizeBinaryType, b *memory.Buffer) error {
@@ -231,6 +285,82 @@ func CheckBufferLength(t *arrow.FixedSizeBinaryType, b *memory.Buffer) error {
 		return fmt.Errorf("buffer length %d is not compatible with %#v", b.Len(), t)
 	}
 	return nil
+}
+
+func ScalarEquals(left, right Scalar) (bool, error) {
+	if left == nil {
+		left = NewNullScalar(arrow.Null)
+	}
+	if right == nil {
+		right = NewNullScalar(arrow.Null)
+	}
+	if &left == &right {
+		return true, nil
+	} else if !arrow.TypeEqual(left.DataType(), right.DataType()) {
+		return false, nil
+	} else if left.IsValid() != right.IsValid() {
+		return false, nil
+	} else {
+		visitor := NewScalarEqualsVisitor(right)
+		if err := visitor.Visit(left); err != nil {
+			return false, err
+		}
+		return visitor.Result(), nil
+	}
+}
+
+type ScalarEqualsVisitor struct {
+	right  Scalar
+	result bool
+}
+
+func NewScalarEqualsVisitor(right Scalar) *ScalarEqualsVisitor {
+	return &ScalarEqualsVisitor{
+		right:  right,
+		result: false,
+	}
+}
+
+func (s *ScalarEqualsVisitor) Visit(left Scalar) error {
+	switch left.(type) {
+	case NullScalar:
+		s.result = true
+	case StructScalar:
+		s.result = s.right.Equals(left)
+	case UnionScalar:
+		return fmt.Errorf("union: %w", arrow.ArrowNYIException)
+		// s.result = s.right.Equals(left)
+	case DictionaryScalar:
+		return fmt.Errorf("dictionary: %w", arrow.ArrowNYIException)
+		// s.result = s.right.Equals(left)
+	case ExtensionScalar:
+		return fmt.Errorf("extension: %w", arrow.ArrowNYIException)
+		// s.result = s.right.Equals(left)
+	default:
+		// If none of the above types matched, try the generated ones
+		if found := s.visitGenerated(left); !found {
+			fmt.Errorf("ScalarEqualsVisitor Visit: unhandled type: %T", left)
+		}
+	}
+
+	return nil
+}
+
+func (s *ScalarEqualsVisitor) Result() bool {
+	return s.result
+}
+
+func ScalarIsNaN(s Scalar) bool {
+	switch v := s.(type) {
+	case Float16Scalar:
+		return v.IsNaN()
+	case Float32Scalar:
+		return v.IsNaN()
+	case Float64Scalar:
+		return v.IsNaN()
+	default:
+		return false
+	}
 }
 
 var (

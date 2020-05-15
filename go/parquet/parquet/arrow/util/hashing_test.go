@@ -2,6 +2,7 @@ package util
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -129,14 +130,13 @@ func AssertGetOrInsertNull(t *testing.T, table MemoTable, expected int32) {
 	testutil.AssertDeepEq(t, table.GetOrInsertNull(nil, nil), expected)
 }
 
-// TODO(nickpoorman): Generate this for all the Scalar types
 func TestScalarMemoTableInt64(t *testing.T) {
-	a := toScalar(1234)
-	b := toScalar(0)
-	c := toScalar(-98765321)
+	a := toScalar(int64(1234))
+	b := toScalar(int64(0))
+	c := toScalar(int64(-98765321))
 	d := toScalar(int64(12345678901234))
-	e := toScalar(-1)
-	f := toScalar(1)
+	e := toScalar(int64(-1))
+	f := toScalar(int64(1))
 	g := toScalar(int64(9223372036854775807))
 	h := toScalar(int64(-9223372036854775807) - 1)
 
@@ -147,9 +147,7 @@ func TestScalarMemoTableInt64(t *testing.T) {
 	testutil.AssertEqInt(t, int(table.Size()), 0)
 	AssertGet(t, table, a, kKeyNotFound)
 	AssertGetNull(t, table, kKeyNotFound)
-	fmt.Println("Insert A")
 	AssertGetOrInsert(t, table, a, 0)
-	fmt.Println("Done insert")
 	AssertGet(t, table, b, kKeyNotFound)
 	AssertGetOrInsert(t, table, b, 1)
 	AssertGetOrInsert(t, table, c, 2)
@@ -157,9 +155,7 @@ func TestScalarMemoTableInt64(t *testing.T) {
 	AssertGetOrInsert(t, table, e, 4)
 	AssertGetOrInsertNull(t, table, 5)
 
-	fmt.Println("Get A")
 	AssertGet(t, table, a, 0)
-	fmt.Println("Done Get A")
 	AssertGetOrInsert(t, table, a, 0)
 	AssertGet(t, table, e, 4)
 	AssertGetOrInsert(t, table, e, 4)
@@ -182,33 +178,212 @@ func TestScalarMemoTableInt64(t *testing.T) {
 	{
 		values := make([]arrow.Scalar, size)
 		table.CopyValues(0, -1, values)
-		want := []arrow.Scalar{a, b, c, d, e, toScalar(0), f, g, h}
-		testutil.AssertDeepEq(t, values, want)
+		want := []arrow.Scalar{a, b, c, d, e, nil, f, g, h}
+		assertScalarElementsEq(t, values, want)
+	}
+	{
+		values := make([]arrow.Scalar, size)
+		table.CopyValues(0, -1, values)
+		want := []arrow.Scalar{a, b, c, d, e, arrow.NewNullScalar(nil), f, g, h}
+		assertScalarElementsEq(t, values, want)
 	}
 	{
 		startOffset := 3
 		values := make([]arrow.Scalar, size-startOffset)
 		table.CopyValues(int32(startOffset), -1, values)
-		want := []arrow.Scalar{d, e, toScalar(0), f, g, h}
-		testutil.AssertDeepEq(t, values, want)
+		want := []arrow.Scalar{d, e, nil, f, g, h}
+		assertScalarElementsEq(t, values, want)
+	}
+}
+
+func TestScalarMemoTableUint16(t *testing.T) {
+	a := toScalar(uint16(1236))
+	b := toScalar(uint16(0))
+	c := toScalar(uint16(65535))
+	d := toScalar(uint16(32767))
+	e := toScalar(uint16(1))
+
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
+	table := NewScalarMemoTable(pool, 0)
+	testutil.AssertEqInt(t, int(table.Size()), 0)
+	AssertGet(t, table, a, kKeyNotFound)
+	AssertGetNull(t, table, kKeyNotFound)
+	AssertGetOrInsert(t, table, a, 0)
+	AssertGet(t, table, b, kKeyNotFound)
+	AssertGetOrInsert(t, table, b, 1)
+	AssertGetOrInsert(t, table, c, 2)
+	AssertGetOrInsert(t, table, d, 3)
+
+	{
+		testutil.AssertEqInt(t, int(table.Size()), 4)
+		values := make([]arrow.Scalar, table.Size())
+		table.CopyValues(0, -1, values)
+		want := []arrow.Scalar{a, b, c, d}
+		assertScalarElementsEq(t, values, want)
+	}
+
+	AssertGetOrInsertNull(t, table, 4)
+	AssertGetOrInsert(t, table, e, 5)
+
+	AssertGet(t, table, a, 0)
+	AssertGetOrInsert(t, table, a, 0)
+	AssertGetOrInsert(t, table, b, 1)
+	AssertGetOrInsert(t, table, c, 2)
+	AssertGetOrInsert(t, table, d, 3)
+	AssertGetNull(t, table, 4)
+	AssertGet(t, table, e, 5)
+	AssertGetOrInsert(t, table, e, 5)
+
+	testutil.AssertEqInt(t, int(table.Size()), 6)
+	values := make([]arrow.Scalar, table.Size())
+	table.CopyValues(0, -1, values)
+	want := []arrow.Scalar{a, b, c, d, nil, e}
+	assertScalarElementsEq(t, values, want)
+}
+
+func TestScalarMemoTableInt8(t *testing.T) {
+	a := toScalar(int8(1))
+	b := toScalar(int8(0))
+	c := toScalar(int8(-1))
+	d := toScalar(int8(-128))
+	e := toScalar(int8(127))
+
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
+	table := NewScalarMemoTable(pool, 0)
+	AssertGet(t, table, a, kKeyNotFound)
+	AssertGetNull(t, table, kKeyNotFound)
+	AssertGetOrInsert(t, table, a, 0)
+	AssertGet(t, table, b, kKeyNotFound)
+	AssertGetOrInsert(t, table, b, 1)
+	AssertGetOrInsert(t, table, c, 2)
+	AssertGetOrInsert(t, table, d, 3)
+	AssertGetOrInsert(t, table, e, 4)
+	AssertGetOrInsertNull(t, table, 5)
+
+	AssertGet(t, table, a, 0)
+	AssertGetOrInsert(t, table, a, 0)
+	AssertGetOrInsert(t, table, b, 1)
+	AssertGetOrInsert(t, table, c, 2)
+	AssertGetOrInsert(t, table, d, 3)
+	AssertGet(t, table, e, 4)
+	AssertGetOrInsert(t, table, e, 4)
+	AssertGetNull(t, table, 5)
+	AssertGetOrInsertNull(t, table, 5)
+
+	testutil.AssertEqInt(t, int(table.Size()), 6)
+	values := make([]arrow.Scalar, table.Size())
+	table.CopyValues(0, -1, values)
+	want := []arrow.Scalar{a, b, c, d, e, nil}
+	assertScalarElementsEq(t, values, want)
+}
+
+//// TODO: Implement NewSmallScalarMemoTable
+// func TestScalarMemoTableBool(t *testing.T) {
+// 	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+// 	defer pool.AssertSize(t, 0)
+
+// 	table := NewSmallScalarMemoTable(pool, 0)
+// 	testutil.AssertEqInt(t, int(table.Size()), 0)
+// 	AssertGet(t, table, toScalar(true), kKeyNotFound)
+// 	AssertGetOrInsert(t, table, toScalar(true), 0)
+// 	AssertGetOrInsertNull(t, table, 1)
+// 	AssertGetOrInsert(t, table, toScalar(false), 2)
+
+// 	AssertGet(t, table, toScalar(true), 0)
+// 	AssertGetOrInsert(t, table, toScalar(true), 0)
+// 	AssertGetNull(t, table, 1)
+// 	AssertGetOrInsertNull(t, table, 1)
+// 	AssertGet(t, table, toScalar(false), 2)
+// 	AssertGetOrInsert(t, table, toScalar(false), 2)
+
+// 	testutil.AssertEqInt(t, int(table.Size()), 3)
+// 	want := []arrow.Scalar{toScalar(true), nil, toScalar(false)}
+// 	assertScalarElementsEq(t, table.values(), want)
+// }
+
+func TestScalarMemoTableFloat64(t *testing.T) {
+	a := toScalar(float64(0.0))
+	b := toScalar(float64(1.5))
+	c := toScalar(float64(-0.1)) // different than C++ as -0.0 isn't a thing
+	d := toScalar(float64(math.Inf(1)))
+	e := toScalar(float64(math.Inf(-1)))
+	f := toScalar(float64(math.NaN()))
+
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
+
+	table := NewScalarMemoTable(pool, 0)
+	testutil.AssertEqInt(t, int(table.Size()), 0)
+	AssertGet(t, table, a, kKeyNotFound)
+	AssertGetNull(t, table, kKeyNotFound)
+	AssertGetOrInsert(t, table, a, 0)
+	AssertGet(t, table, b, kKeyNotFound)
+	AssertGetOrInsert(t, table, b, 1)
+	AssertGetOrInsert(t, table, c, 2)
+	AssertGetOrInsert(t, table, d, 3)
+	AssertGetOrInsert(t, table, e, 4)
+	AssertGetOrInsert(t, table, f, 5)
+
+	AssertGet(t, table, a, 0)
+	AssertGetOrInsert(t, table, a, 0)
+	AssertGetOrInsert(t, table, b, 1)
+	AssertGetOrInsert(t, table, c, 2)
+	AssertGetOrInsert(t, table, d, 3)
+	AssertGet(t, table, e, 4)
+	AssertGetOrInsert(t, table, e, 4)
+	AssertGet(t, table, f, 5)
+	AssertGetOrInsert(t, table, f, 5)
+
+	testutil.AssertEqInt(t, int(table.Size()), 6)
+	expected := []arrow.Scalar{a, b, c, d, e, f}
+	values := make([]arrow.Scalar, table.Size())
+	table.CopyValues(0, -1, values)
+	for i := 0; i < len(expected); i++ {
+		u := expected[i]
+		v := values[i]
+		if arrow.ScalarIsNaN(u) {
+			testutil.AssertTrue(t, arrow.ScalarIsNaN(v))
+		} else {
+			testutil.AssertDeepEq(t, u, v)
+		}
 	}
 }
 
 func toScalar(v interface{}) arrow.Scalar {
 	switch v := v.(type) {
-	// case int:
-	// 	return arrow.NewInt64Scalar(int64(v), nil)
-	// case int64:
-	// 	return arrow.NewInt64Scalar(int64(v), nil)
-	// case int32:
-	// 	return arrow.NewInt64Scalar(int64(v), nil)
 	case int:
 		return arrow.NewInt64Scalar(int64(v), nil)
 	case int64:
 		return arrow.NewInt64Scalar(v, nil)
 	case int32:
 		return arrow.NewInt32Scalar(v, nil)
+	case uint16:
+		return arrow.NewUint16Scalar(v, nil)
+	case int8:
+		return arrow.NewInt8Scalar(v, nil)
+	case bool:
+		return arrow.NewBooleanScalar(v, nil)
+	case float64:
+		return arrow.NewFloat64Scalar(v, nil)
 	default:
 		panic(fmt.Sprintf("toScalar not implemented for type: %T", v))
+	}
+}
+
+func assertScalarElementsEq(t *testing.T, got, want []arrow.Scalar) {
+	t.Helper()
+	if len(got) != len(want) {
+		t.Errorf("assertElementsEq: len(got)=%d; len(want)=%d\n", len(got), len(want))
+	}
+	for i := range got {
+		eq, err := arrow.ScalarEquals(got[i], want[i])
+		testutil.AssertNil(t, err)
+		if !eq {
+			t.Errorf("assertScalarElementsEq: got=\n%+v\nwant=\n%+v\n", got, want)
+		}
 	}
 }

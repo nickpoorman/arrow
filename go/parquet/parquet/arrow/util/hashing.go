@@ -3,7 +3,6 @@ package util
 import (
 	"fmt"
 	"hash/maphash"
-	"math"
 
 	"github.com/apache/arrow/go/arrow/bitutil"
 	"github.com/apache/arrow/go/arrow/memory"
@@ -152,12 +151,10 @@ func (ht *hashTable) lookup(cKind CompareKind, h uint64, entries []HashTableEntr
 	for {
 		entry := entries[index]
 		if ht.CompareEntry(cKind, h, entry, cmpFunc) {
-			fmt.Printf("found it [%d]: entries: %+v | entry: %+v\n", index, entries, entry)
 			// Found
 			return index, true
 		}
 		if entry.h == kSentinel {
-			fmt.Printf("empty slot [%d]: entries: %+v | entry: %+v\n", index, entries, entry)
 			// Empty slot
 			return index, false
 		}
@@ -181,7 +178,6 @@ func (*hashTable) CompareEntry(cKind CompareKind, h uint64, entry HashTableEntry
 	if cKind == HashTable_CompareKind_NoCompare {
 		return false
 	}
-	fmt.Printf("CompareEntry: entry.h: %d | h: %d\n", entry.h, h)
 	return entry.h == h && cmpFunc(entry.payload)
 }
 
@@ -190,7 +186,6 @@ func (ht *hashTable) Insert(entry *HashTableEntry, h uint64, payload interface{}
 	if entry.bool() {
 		return fmt.Errorf("Insert: Entry must be empty before inserting: %+v", entry)
 	}
-	fmt.Printf("Inserting hash: %d\n", h)
 	entry.h = ht.fixHash(h)
 	entry.payload = payload
 	ht.size++
@@ -205,8 +200,9 @@ func (ht *hashTable) Insert(entry *HashTableEntry, h uint64, payload interface{}
 // Visit all non-empty entries in the table
 // The visit_func should have signature func(*HashTableEntry)
 func (ht *hashTable) VisitEntries(visitFunc func(*HashTableEntry)) {
+	entries := ht.entries()
 	for i := uint64(0); i < ht.capacity; i++ {
-		entry := ht.entries()[i]
+		entry := entries[i]
 		if entry.bool() {
 			visitFunc(&entry)
 		}
@@ -295,7 +291,6 @@ func (s ScalarMemoTable) Size() int32 {
 
 func (s *ScalarMemoTable) Get(value arrow.Scalar) (int32, error) {
 	cmpFunc := func(payload interface{}) bool {
-		fmt.Printf("Called compare func with payload: %+v\n", payload.(*scalarPayload))
 		return CompareScalars(payload.(*scalarPayload).value, value)
 	}
 	h, err := s.ComputeHash(value)
@@ -320,7 +315,6 @@ func (s *ScalarMemoTable) GetOrInsert(
 	if err != nil {
 		return 0, err
 	}
-	fmt.Println("GetOrInsert: h:", h)
 	hashTableEntry, ok := s.hashTable.Lookup(h, cmpFunc)
 	var memoIndex int32
 	if ok {
@@ -405,36 +399,11 @@ func ScalarComputeStringHash(data []byte) (uint64, error) {
 }
 
 func CompareScalars(left, right arrow.Scalar) bool {
-	if isFloatingPoint(left) && isFloatingPoint(right) {
-		if math.IsNaN(scalarToFloat64(left)) {
-			// XXX should we do a bit-precise comparison?
-			return math.IsNaN(scalarToFloat64(right))
-		}
+	if arrow.ScalarIsNaN(left) {
+		// XXX should we do a bit-precise comparison?
+		return arrow.ScalarIsNaN(right)
 	}
-	fmt.Printf("checking left and right equals: left %+v | right %+v\n", left, right)
 	return left.Equals(right)
-}
-
-func isFloatingPoint(scalar arrow.Scalar) bool {
-	switch scalar.(type) {
-	case *arrow.Float16Scalar, *arrow.Float32Scalar, *arrow.Float64Scalar:
-		return true
-	default:
-		return false
-	}
-}
-
-func scalarToFloat64(scalar arrow.Scalar) float64 {
-	switch v := scalar.(type) {
-	case *arrow.Float16Scalar:
-		return float64(v.Value().Float32())
-	case *arrow.Float32Scalar:
-		return float64(v.Value())
-	case *arrow.Float64Scalar:
-		return v.Value()
-	default:
-		panic(fmt.Sprintf("scalarToFloat64: unknown Scalar type: %T", scalar))
-	}
 }
 
 var (

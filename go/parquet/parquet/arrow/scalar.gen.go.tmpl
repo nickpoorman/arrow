@@ -82,8 +82,22 @@ func New{{.T}}ScalarBytes(value []byte, dataType arrow.DataType) {{.T}}Scalar {
 }
 
 func (s {{.T}}Scalar) Equals(other Scalar) bool {
-	right, ok := other.({{.T}}Scalar)
+	right, ok := other.({{.T}}Scalar)	
+	{{- if eq .CType "*memory.Buffer"}}
+	if !ok { return false }
+	if s.value == nil && right.value == nil { return true }
+	if s.value == nil || right.value == nil { return false }
+	return s.value.Equals(right.value)
+	{{- else if eq .CType "array.Interface"}}
+	if !ok { return false }
+	if s.value == nil && right.value == nil { return true }
+	if s.value == nil || right.value == nil { return false }
+	// TODO(nickpoorman): array.Interface needs an Equals method
+	panic("not implemented")
+	// return s.value.Equals(right.value)
+	{{- else}}
 	return ok && s.value == right.value
+	{{- end}}
 }
 
 func (s {{.T}}Scalar) NotEquals(other Scalar) bool {
@@ -105,7 +119,41 @@ func (s {{.T}}Scalar) ValueBytes() []byte {
 	panic("not implemented")
 	{{- end}}
 }
+
+func (s {{.T}}Scalar) DataType() arrow.DataType {
+	return s.dataType
+}
+
+func (s {{.T}}Scalar) IsValid() bool {
+	return s.isValid
+}
+
+{{- if contains .T "Float16"}}
+func (s {{.T}}Scalar) IsNaN() bool {
+	return math.IsNaN(float64(s.value.Float32()))
+}
+{{- else if eq .T "Float32"}}
+func (s {{.T}}Scalar) IsNaN() bool {
+	return math.IsNaN(float64(s.value))
+}
+{{- else if eq .T "Float64"}}
+func (s {{.T}}Scalar) IsNaN() bool {
+	return math.IsNaN(s.value)
+}
 {{- end}}
+{{- end}}
+
+func (s *ScalarEqualsVisitor) visitGenerated(left Scalar) bool {
+	switch left.(type) {
+	{{- range .In}}
+	case {{.T}}Scalar:
+		s.result = left.Equals(s.right)
+		return true
+	{{- end}}
+	default:
+		return false
+	}
+}
 
 var (
 	{{range .In}}
