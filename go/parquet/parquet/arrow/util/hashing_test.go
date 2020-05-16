@@ -281,29 +281,29 @@ func TestScalarMemoTableInt8(t *testing.T) {
 	assertScalarElementsEq(t, values, want)
 }
 
-//// TODO: Implement NewSmallScalarMemoTable
-// func TestScalarMemoTableBool(t *testing.T) {
-// 	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
-// 	defer pool.AssertSize(t, 0)
+// TODO: Implement NewSmallScalarMemoTable
+func TestScalarMemoTableBool(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	defer pool.AssertSize(t, 0)
 
-// 	table := NewSmallScalarMemoTable(pool, 0)
-// 	testutil.AssertEqInt(t, int(table.Size()), 0)
-// 	AssertGet(t, table, toScalar(true), kKeyNotFound)
-// 	AssertGetOrInsert(t, table, toScalar(true), 0)
-// 	AssertGetOrInsertNull(t, table, 1)
-// 	AssertGetOrInsert(t, table, toScalar(false), 2)
+	table := NewSmallScalarMemoTable(pool, 0)
+	testutil.AssertEqInt(t, int(table.Size()), 0)
+	AssertGet(t, table, toScalar(true), kKeyNotFound)
+	AssertGetOrInsert(t, table, toScalar(true), 0)
+	AssertGetOrInsertNull(t, table, 1)
+	AssertGetOrInsert(t, table, toScalar(false), 2)
 
-// 	AssertGet(t, table, toScalar(true), 0)
-// 	AssertGetOrInsert(t, table, toScalar(true), 0)
-// 	AssertGetNull(t, table, 1)
-// 	AssertGetOrInsertNull(t, table, 1)
-// 	AssertGet(t, table, toScalar(false), 2)
-// 	AssertGetOrInsert(t, table, toScalar(false), 2)
+	AssertGet(t, table, toScalar(true), 0)
+	AssertGetOrInsert(t, table, toScalar(true), 0)
+	AssertGetNull(t, table, 1)
+	AssertGetOrInsertNull(t, table, 1)
+	AssertGet(t, table, toScalar(false), 2)
+	AssertGetOrInsert(t, table, toScalar(false), 2)
 
-// 	testutil.AssertEqInt(t, int(table.Size()), 3)
-// 	want := []arrow.Scalar{toScalar(true), nil, toScalar(false)}
-// 	assertScalarElementsEq(t, table.values(), want)
-// }
+	testutil.AssertEqInt(t, int(table.Size()), 3)
+	want := []arrow.Scalar{toScalar(true), nil, toScalar(false)}
+	assertScalarElementsEq(t, table.values(), want)
+}
 
 func TestScalarMemoTableFloat64(t *testing.T) {
 	a := toScalar(float64(0.0))

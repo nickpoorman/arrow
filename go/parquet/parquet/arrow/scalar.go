@@ -339,7 +339,7 @@ func (s *ScalarEqualsVisitor) Visit(left Scalar) error {
 	default:
 		// If none of the above types matched, try the generated ones
 		if found := s.visitGenerated(left); !found {
-			fmt.Errorf("ScalarEqualsVisitor Visit: unhandled type: %T", left)
+			return fmt.Errorf("ScalarEqualsVisitor Visit: unhandled type: %T", left)
 		}
 	}
 
