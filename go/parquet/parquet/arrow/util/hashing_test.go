@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"strings"
 	"testing"
 
+	arrowCore "github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/testutil"
 	"github.com/nickpoorman/arrow-parquet-go/parquet/arrow"
@@ -281,7 +283,7 @@ func TestScalarMemoTableInt8(t *testing.T) {
 	assertScalarElementsEq(t, values, want)
 }
 
-func TestScalarMemoTableBool(t *testing.T) {
+func TestSmallScalarMemoTableBool(t *testing.T) {
 	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer pool.AssertSize(t, 0)
 
@@ -354,6 +356,91 @@ func TestScalarMemoTableFloat64(t *testing.T) {
 	}
 }
 
+func TestBinaryMemoTableBasics(t *testing.T) {
+	a := toScalar("")
+	b := toScalar("a")
+	c := toScalar("foo")
+	d := toScalar("bar")
+	e := toScalar("\x00")
+	f := toScalar("\x00trailing")
+
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	// defer pool.AssertSize(t, 0) // Whatever uses this data will release the memory?
+
+	table := NewBinaryMemoTable(pool, 0, -1, arrowCore.BinaryTypes.String)
+	testutil.AssertEqInt(t, int(table.Size()), 0)
+	AssertGet(t, table, a, kKeyNotFound)
+	AssertGetNull(t, table, kKeyNotFound)
+	AssertGetOrInsert(t, table, a, 0)
+	AssertGet(t, table, b, kKeyNotFound)
+	AssertGetOrInsert(t, table, b, 1)
+	AssertGetOrInsert(t, table, c, 2)
+	AssertGetOrInsert(t, table, d, 3)
+	AssertGetOrInsert(t, table, e, 4)
+	AssertGetOrInsert(t, table, f, 5)
+	AssertGetOrInsertNull(t, table, 6)
+
+	AssertGet(t, table, a, 0)
+	AssertGetOrInsert(t, table, a, 0)
+	AssertGet(t, table, b, 1)
+	AssertGetOrInsert(t, table, b, 1)
+	AssertGetOrInsert(t, table, c, 2)
+	AssertGetOrInsert(t, table, d, 3)
+	AssertGetOrInsert(t, table, e, 4)
+	AssertGet(t, table, f, 5)
+	AssertGetOrInsert(t, table, f, 5)
+	AssertGetNull(t, table, 6)
+	AssertGetOrInsertNull(t, table, 6)
+
+	testutil.AssertEqInt(t, int(table.Size()), 7)
+	testutil.AssertEqInt(t, int(table.ValuesSize()), 17)
+
+	size := table.Size()
+	{
+		offsets := make([]int32, size+1)
+		table.CopyOffsets(0, -1, offsets)
+		testutil.AssertDeepEq(t, offsets, []int32{0, 0, 1, 4, 7, 8, 17, 17})
+
+		expectedValues := ""
+		expectedValues += "afoobar"
+		expectedValues += "\x00"
+		expectedValues += "\x00"
+		expectedValues += "trailing"
+		values := []byte(strings.Repeat("X", 17))
+		table.CopyValues(0, -1, values)
+		testutil.AssertDeepEq(t, values, []byte(expectedValues))
+	}
+	{
+		startOffset := int32(4)
+		offsets := make([]int32, size+1-startOffset)
+		table.CopyOffsets(startOffset, -1, offsets)
+		testutil.AssertDeepEq(t, offsets, []int32{0, 1, 10, 10})
+
+		expectedValues := ""
+		expectedValues += "\x00"
+		expectedValues += "\x00"
+		expectedValues += "trailing"
+		values := []byte(strings.Repeat("X", 10))
+		table.CopyValues(4 /* start offset */, -1, values)
+		testutil.AssertDeepEq(t, values, []byte(expectedValues))
+	}
+	{
+		startOffset := int32(1)
+		var actual [][]byte
+		table.VisitValues(startOffset, func(v []byte) {
+			actual = append(actual, v)
+		})
+		testutil.AssertDeepEq(t, actual, [][]byte{
+			[]byte("a"),
+			[]byte("foo"),
+			[]byte("bar"),
+			[]byte("\x00"),
+			[]byte("\x00trailing"),
+			[]byte(""),
+		})
+	}
+}
+
 func toScalar(v interface{}) arrow.Scalar {
 	switch v := v.(type) {
 	case int:
@@ -370,6 +457,8 @@ func toScalar(v interface{}) arrow.Scalar {
 		return arrow.NewBooleanScalar(v, nil)
 	case float64:
 		return arrow.NewFloat64Scalar(v, nil)
+	case string:
+		return arrow.NewStringScalarBytes([]byte(v), nil)
 	default:
 		panic(fmt.Sprintf("toScalar not implemented for type: %T", v))
 	}

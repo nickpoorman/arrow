@@ -1,9 +1,12 @@
 package util
 
 import (
+	"bytes"
 	"fmt"
 	"hash/maphash"
 
+	arrowCore "github.com/apache/arrow/go/arrow"
+	"github.com/apache/arrow/go/arrow/array"
 	"github.com/apache/arrow/go/arrow/bitutil"
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
@@ -282,7 +285,7 @@ func NewScalarMemoTable(pool memory.Allocator, entries int /* default: 0 */) *Sc
 // The number of entries in the memo table +1 if null was added.
 // (which is also 1 + the largest memo index)
 func (s *ScalarMemoTable) Size() int32 {
-	nullAdded := int32(0)
+	var nullAdded int32
 	if s.GetNull() != kKeyNotFound {
 		nullAdded = 1
 	}
@@ -364,19 +367,52 @@ func (*ScalarMemoTable) ComputeHash(value arrow.Scalar) (uint64, error) {
 // Copy values starting from index `start` into `outData`.
 // Check the size in debug mode.
 func (s *ScalarMemoTable) CopyValues(start int32, outSize int64, outData interface{}) {
-	outDataScalars := outData.([]arrow.Scalar)
-	s.copyValues(start, outSize, outDataScalars)
+	switch v := outData.(type) {
+	case []arrow.Scalar:
+		s.copyValuesScalars(start, outSize, v)
+	default:
+		panic(fmt.Errorf("ScalarMemoTable.CopyValues() unsupported outData type: %T", outData))
+	}
 }
 
 // Copy values starting from index `start` into `outData`.
 // Check the size in debug mode.
-func (s *ScalarMemoTable) copyValues(start int32, outSize int64, outData []arrow.Scalar) {
+func (s *ScalarMemoTable) copyValuesScalars(start int32, outSize int64, outData []arrow.Scalar) {
 	s.hashTable.VisitEntries(func(entry *HashTableEntry) {
 		index := entry.payload.(*scalarPayload).memoIndex - start
 		if index >= 0 {
 			outData[index] = entry.payload.(*scalarPayload).value
 		}
 	})
+}
+
+func ScalarComputeHash(scalar arrow.Scalar) (uint64, error) {
+	h1 := new(maphash.Hash)
+	h1.SetSeed(hashSeed)
+	_, err := h1.Write(scalar.ValueBytes())
+	if err != nil {
+		return 0, err
+	}
+	return h1.Sum64(), nil
+}
+
+func ScalarComputeStringHash(data []byte) (uint64, error) {
+	// TODO(nickpoorman): Try implementing the C++ algorithm and benchmark for speed
+	h1 := new(maphash.Hash)
+	h1.SetSeed(hashSeed)
+	_, err := h1.Write(data)
+	if err != nil {
+		return 0, err
+	}
+	return h1.Sum64(), nil
+}
+
+func CompareScalars(left, right arrow.Scalar) bool {
+	if arrow.ScalarIsNaN(left) {
+		// XXX should we do a bit-precise comparison?
+		return arrow.ScalarIsNaN(right)
+	}
+	return left.Equals(right)
 }
 
 // ----------------------------------------------------------------------
@@ -475,40 +511,250 @@ func (s *SmallScalarMemoTable) Size() int32 {
 func (s *SmallScalarMemoTable) CopyValues(start int32, outSize int64, outData interface{}) {
 	debug.AssertGE(int(start), int(0))
 	debug.AssertLE(int(start), len(s.indexToValue))
-	outDataScalars := outData.([]arrow.Scalar)
-	copy(outDataScalars, s.indexToValue[start:])
+	switch v := outData.(type) {
+	case []arrow.Scalar:
+		copy(v, s.indexToValue[start:])
+	default:
+		panic(fmt.Errorf("SmallScalarMemoTable.CopyValues() unsupported outData type: %T", outData))
+	}
 }
 
-func ScalarComputeHash(scalar arrow.Scalar) (uint64, error) {
-	h1 := new(maphash.Hash)
-	h1.SetSeed(hashSeed)
-	_, err := h1.Write(scalar.ValueBytes())
+// ----------------------------------------------------------------------
+// A memoization table for variable-sized binary data.
+
+type binaryPayload struct {
+	memoIndex int32
+}
+
+func newBinaryPayload(memoIndex int32) *binaryPayload {
+	return &binaryPayload{
+		memoIndex: memoIndex,
+	}
+}
+
+type BinaryMemoTable struct {
+	hashTable HashTable
+
+	nullIndex     int32
+	binaryBuilder *array.BinaryBuilder
+}
+
+func NewBinaryMemoTable(pool memory.Allocator, entries int, /* default: 0 */
+	valuesSize int, /* default: -1 */
+	dataType arrowCore.BinaryDataType) *BinaryMemoTable {
+
+	table := &BinaryMemoTable{
+		hashTable:     NewHashTable(pool, uint64(entries)),
+		binaryBuilder: array.NewBinaryBuilder(pool, dataType),
+		nullIndex:     kKeyNotFound,
+	}
+	dataSize := valuesSize
+	if valuesSize < 0 {
+		dataSize = entries * 4
+	}
+	table.binaryBuilder.Resize(entries)
+	table.binaryBuilder.ReserveData(dataSize)
+	return table
+}
+
+func (t *BinaryMemoTable) Get(value arrow.Scalar) (int32, error) {
+	data := value.ValueBytes()
+	h, err := ScalarComputeStringHash(data)
 	if err != nil {
 		return 0, err
 	}
-	return h1.Sum64(), nil
+	hashTableEntry, ok := t.lookup(h, data)
+	if ok {
+		return hashTableEntry.payload.(*binaryPayload).memoIndex, nil
+	} else {
+		return kKeyNotFound, nil
+	}
 }
 
-func ScalarComputeStringHash(data []byte) (uint64, error) {
-	// TODO(nickpoorman): Try implementing the C++ algorithm and benchmark for speed
-	h1 := new(maphash.Hash)
-	h1.SetSeed(hashSeed)
-	_, err := h1.Write(data)
+func (t *BinaryMemoTable) GetOrInsert(
+	value arrow.Scalar, onFound func(int32), onNotFound func(int32)) (int32, error) {
+
+	data := value.ValueBytes()
+	h, err := ScalarComputeStringHash(data)
 	if err != nil {
 		return 0, err
 	}
-	return h1.Sum64(), nil
+	hashTableEntry, ok := t.lookup(h, data)
+	var memoIndex int32
+	if ok {
+		memoIndex = hashTableEntry.payload.(*binaryPayload).memoIndex
+		if onFound != nil {
+			onFound(memoIndex)
+		}
+	} else {
+		memoIndex = t.Size()
+		// Insert string value
+		t.binaryBuilder.Append(data)
+		// Insert hash entry
+		t.hashTable.Insert(hashTableEntry, h, newBinaryPayload(memoIndex))
+
+		if onNotFound != nil {
+			onNotFound(memoIndex)
+		}
+	}
+	return memoIndex, nil
 }
 
-func CompareScalars(left, right arrow.Scalar) bool {
-	if arrow.ScalarIsNaN(left) {
-		// XXX should we do a bit-precise comparison?
-		return arrow.ScalarIsNaN(right)
+func (t *BinaryMemoTable) lookup(h uint64, data []byte) (*HashTableEntry, bool) {
+	cmpFunc := func(payload interface{}) bool {
+		lhs := t.binaryBuilder.Value(int(payload.(*binaryPayload).memoIndex))
+		return bytes.Equal(lhs, data)
 	}
-	return left.Equals(right)
+	return t.hashTable.Lookup(h, cmpFunc)
+}
+
+func (t *BinaryMemoTable) GetNull() int32 {
+	return t.nullIndex
+}
+
+func (t *BinaryMemoTable) GetOrInsertNull(
+	onFound func(int32), onNotFound func(int32)) int32 {
+
+	memoIndex := t.GetNull()
+	if memoIndex != kKeyNotFound {
+		if onFound != nil {
+			onFound(memoIndex)
+		}
+	} else {
+		memoIndex = t.Size()
+		t.nullIndex = memoIndex
+		t.binaryBuilder.AppendNull()
+		if onNotFound != nil {
+			onNotFound(memoIndex)
+		}
+	}
+	return memoIndex
+}
+
+// The number of entries in the memo table
+// (which is also 1 + the largest memo index)
+func (t *BinaryMemoTable) Size() int32 {
+	var nullAdded int32
+	if t.GetNull() != kKeyNotFound {
+		nullAdded = 1
+	}
+	return int32(t.hashTable.Size()) + nullAdded
+}
+
+func (t *BinaryMemoTable) ValuesSize() int {
+	return t.binaryBuilder.DataLen()
+}
+
+// Copy (n + 1) offsets starting from index `start` into `out_data`
+func (t *BinaryMemoTable) CopyOffsets(start int32, outSize int64, outData interface{}) {
+	debug.AssertLT(start, t.Size())
+	switch v := outData.(type) {
+	case []int32:
+		t.copyOffsetsInt32(start, outSize, v)
+	default:
+		panic(fmt.Errorf("BinaryMemoTable.CopyOffsets() unsupported outData type: %T", outData))
+	}
+}
+
+func (t *BinaryMemoTable) copyOffsetsInt32(start int32, outSize int64, outData []int32) {
+	outDataOffset := 0
+	delta := t.binaryBuilder.Offset(int(start))
+	for i := start; i < t.Size(); i++ {
+		adjOffset := t.binaryBuilder.Offset(int(i)) - delta
+		outData[outDataOffset] = adjOffset
+		outDataOffset++
+	}
+
+	// Copy last value since BinaryBuilder only materializes it on in Finish()
+	outData[outDataOffset] = int32(t.binaryBuilder.DataLen() - int(delta))
+}
+
+// Copy values starting from index `start` into `outData`.
+// Check the output size in debug mode.
+func (t *BinaryMemoTable) CopyValues(start int32, outSize int64, outData interface{}) {
+	switch v := outData.(type) {
+	case []byte:
+		t.copyValuesBytes(start, outSize, v)
+	default:
+		panic(fmt.Errorf("BinaryMemoTable.CopyValues() unsupported outData type: %T", outData))
+	}
+}
+
+// Copy values starting from index `start` into `outData`.
+// Check the size in debug mode.
+func (t *BinaryMemoTable) copyValuesBytes(start int32, outSize int64, outData []byte) {
+	debug.AssertLE(start, t.Size())
+
+	// The absolute byte offset of `start` value in the binary buffer.
+	offset := t.binaryBuilder.Offset(int(start))
+	length := t.binaryBuilder.DataLen() - int(offset)
+
+	if outSize != -1 {
+		debug.AssertLE(int64(length), outSize)
+	}
+
+	view := t.binaryBuilder.Value(int(start))
+	copy(outData, view[:length])
+}
+
+func (t *BinaryMemoTable) CopyFixedWidthValues(start int32, widthSize int32, outSize int64, outData []byte) {
+	panic("not yet tested") // TODO(nickpoorman): Need to test this because it probably isn't correct
+
+	// This method exists to cope with the fact that the BinaryMemoTable does
+	// not know the fixed width when inserting the null value. The data
+	// buffer hold a zero length string for the null value (if found).
+	//
+	// Thus, the method will properly inject an empty value of the proper width
+	// in the output buffer.
+	//
+	if start >= t.Size() {
+		return
+	}
+
+	nullIndex := t.GetNull()
+	if nullIndex < start {
+		// Nothing to skip, proceed as usual.
+		t.CopyValues(start, outSize, outData)
+		return
+	}
+
+	leftOffset := t.binaryBuilder.Offset(int(start))
+
+	// Ensure that the data length is exactly missing width_size bytes to fit
+	// in the expected output (n_values * width_size).
+	debug.Assert(int64((t.ValuesSize()-int(leftOffset))+int(widthSize)) == outSize,
+		fmt.Sprintf("Assert: %d == %d", int64((t.ValuesSize()-int(leftOffset))+int(widthSize)), outSize))
+
+	inData := t.binaryBuilder.Value(int(start))
+	// The null use 0-length in the data, slice the data in 2 and skip by
+	// width_size in out_data. [part_1][width_size][part_2]
+	nullDataOffset := t.binaryBuilder.Offset(int(nullIndex))
+	leftSize := nullDataOffset - leftOffset
+	if leftSize > 0 {
+		copy(outData, inData[:leftSize])
+	}
+
+	rightSize := t.ValuesSize() - int(nullDataOffset)
+	if rightSize > 0 {
+		// skip the null fixed size value.
+		outOffset := int(leftSize + widthSize)
+		debug.Assert(&outData[outOffset+rightSize:][0] == &outData[outSize:][0],
+			fmt.Sprintf("Assert: %p == %p", &outData[outOffset+rightSize:][0], &outData[outSize:][0]))
+		copy(outData[outOffset:], inData[:rightSize])
+	}
+}
+
+// Visit the stored values in insertion order.
+// The visitor function should have the signature `func([]byte))`.
+func (t *BinaryMemoTable) VisitValues(start int32, visit func([]byte)) {
+	size := int(t.Size())
+	for i := int(start); i < size; i++ {
+		visit(t.binaryBuilder.Value(i))
+	}
 }
 
 var (
 	_ MemoTable = (*ScalarMemoTable)(nil)
 	_ MemoTable = (*SmallScalarMemoTable)(nil)
+	_ MemoTable = (*BinaryMemoTable)(nil)
 )

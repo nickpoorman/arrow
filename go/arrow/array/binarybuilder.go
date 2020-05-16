@@ -141,6 +141,10 @@ func (b *BinaryBuilder) Value(i int) []byte {
 	return b.values.Bytes()[start:end]
 }
 
+func (b *BinaryBuilder) Offset(i int) int32 {
+	return b.offsets.Value(i)
+}
+
 func (b *BinaryBuilder) init(capacity int) {
 	b.builder.init(capacity)
 	b.offsets.resize((capacity + 1) * arrow.Int32SizeBytes)
