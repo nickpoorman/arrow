@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -474,6 +475,168 @@ func assertScalarElementsEq(t *testing.T, got, want []arrow.Scalar) {
 		testutil.AssertNil(t, err)
 		if !eq {
 			t.Errorf("assertScalarElementsEq: got=\n%+v\nwant=\n%+v\n", got, want)
+		}
+	}
+}
+
+func TestNewMemoTables(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+
+	scalarMemoTable := "*util.ScalarMemoTable"
+	smallScalarMemoTable := "*util.SmallScalarMemoTable"
+	binaryMemoTable := "*util.BinaryMemoTable"
+
+	cases := []struct {
+		dataType arrowCore.DataType
+		want     string
+	}{
+		{
+			arrowCore.PrimitiveTypes.Int8,
+			smallScalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Int16,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Int32,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Int64,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Uint8,
+			smallScalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Uint16,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Uint32,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Uint64,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Float32,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Float64,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Date32,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.PrimitiveTypes.Date64,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.Null,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.BinaryTypes.Binary,
+			binaryMemoTable,
+		},
+		{
+			arrowCore.BinaryTypes.String,
+			binaryMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Boolean,
+			smallScalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Date32,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Date64,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.DayTimeInterval,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Duration_s,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Duration_ms,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Duration_us,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Duration_ns,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Float16,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.MonthInterval,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Time32s,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Time32ms,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Time64us,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Time64ns,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Timestamp_s,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Timestamp_ms,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Timestamp_us,
+			scalarMemoTable,
+		},
+		{
+			arrowCore.FixedWidthTypes.Timestamp_ns,
+			scalarMemoTable,
+		},
+		{
+			(*arrowCore.ListType)(nil),
+			scalarMemoTable,
+		},
+		{
+			(*arrowCore.StructType)(nil),
+			scalarMemoTable,
+		},
+	}
+
+	for i, c := range cases {
+		table := NewMemoTable(pool, 0, c.dataType)
+		got := reflect.TypeOf(table).String()
+		if got != c.want {
+			t.Errorf("got=%s; want=%s | case[%d]: %#v\n", got, c.want, i, c)
 		}
 	}
 }

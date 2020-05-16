@@ -252,6 +252,31 @@ type MemoTable interface {
 	CopyValues(start int32, outSize int64, outData interface{})
 }
 
+func NewMemoTable(pool memory.Allocator, entries int /* default: 0 */, dataType arrowCore.DataType) MemoTable {
+	switch dt := dataType.(type) {
+	case arrowCore.BinaryDataType:
+		valueSize := -1
+		switch dt := dataType.(type) {
+		case interface{ BitWidth() int }:
+			valueSize = dt.BitWidth() >> 3
+		}
+		return NewBinaryMemoTable(pool, entries, valueSize, dt)
+	case arrowCore.DataType:
+		bitWidth := -1
+		switch dt := dataType.(type) {
+		case interface{ BitWidth() int }:
+			bitWidth = dt.BitWidth()
+		}
+		if bitWidth != -1 && bitWidth <= 8 {
+			return NewSmallScalarMemoTable(pool, entries)
+		} else {
+			return NewScalarMemoTable(pool, entries)
+		}
+	default:
+		panic(fmt.Sprintf("unknown DataType: %T", dataType))
+	}
+}
+
 // ----------------------------------------------------------------------
 // A memoization table for memory-cheap scalar values.
 

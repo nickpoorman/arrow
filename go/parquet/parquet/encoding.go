@@ -331,7 +331,7 @@ func NewInt64DictEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64
 		dtype: Int64Type,
 		sink:  array.NewInt64BufferBuilder(pool),
 
-		memoTable: utilext.NewScalarMemoTable(),
+		memoTable: utilext.NewScalarMemoTable(pool, kInitialHashTableSize),
 	}, nil
 }
 
