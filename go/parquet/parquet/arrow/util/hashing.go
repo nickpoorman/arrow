@@ -281,7 +281,7 @@ func NewScalarMemoTable(pool memory.Allocator, entries int /* default: 0 */) *Sc
 
 // The number of entries in the memo table +1 if null was added.
 // (which is also 1 + the largest memo index)
-func (s ScalarMemoTable) Size() int32 {
+func (s *ScalarMemoTable) Size() int32 {
 	nullAdded := int32(0)
 	if s.GetNull() != kKeyNotFound {
 		nullAdded = 1
@@ -339,7 +339,9 @@ func (s *ScalarMemoTable) GetNull() int32 {
 	return s.nullIndex
 }
 
-func (s *ScalarMemoTable) GetOrInsertNull(onFound func(int32), onNotFound func(int32)) int32 {
+func (s *ScalarMemoTable) GetOrInsertNull(
+	onFound func(int32), onNotFound func(int32)) int32 {
+
 	memoIndex := s.GetNull()
 	if memoIndex != kKeyNotFound {
 		if onFound != nil {
@@ -355,7 +357,7 @@ func (s *ScalarMemoTable) GetOrInsertNull(onFound func(int32), onNotFound func(i
 	return memoIndex
 }
 
-func (ScalarMemoTable) ComputeHash(value arrow.Scalar) (uint64, error) {
+func (*ScalarMemoTable) ComputeHash(value arrow.Scalar) (uint64, error) {
 	return ScalarComputeHash(value)
 }
 
@@ -375,6 +377,106 @@ func (s *ScalarMemoTable) copyValues(start int32, outSize int64, outData []arrow
 			outData[index] = entry.payload.(*scalarPayload).value
 		}
 	})
+}
+
+// ----------------------------------------------------------------------
+// A memoization table for small scalar values, using direct indexing
+
+const smallScalarMemoTableMaxCardinality = 256
+
+type SmallScalarMemoTable struct {
+	hashTable HashTable
+
+	// The last index is reserved for the null element.
+	valueToIndex [smallScalarMemoTableMaxCardinality + 1]int32 // max cardinality is 256
+	indexToValue []arrow.Scalar
+}
+
+func NewSmallScalarMemoTable(pool memory.Allocator, entries int /* default: 0 */) *SmallScalarMemoTable {
+	table := &SmallScalarMemoTable{
+		hashTable:    NewHashTable(pool, uint64(entries)),
+		indexToValue: make([]arrow.Scalar, 0, smallScalarMemoTableMaxCardinality),
+	}
+	for i := range table.valueToIndex {
+		table.valueToIndex[i] = kKeyNotFound
+	}
+
+	return table
+}
+
+func (s *SmallScalarMemoTable) Get(value arrow.Scalar) (int32, error) {
+	return s.valueToIndex[s.AsIndex(value)], nil
+}
+
+func (*SmallScalarMemoTable) AsIndex(value arrow.Scalar) uint32 {
+	switch v := value.(type) {
+	case interface{ ValueUint32() uint32 }:
+		return v.ValueUint32()
+	default:
+		// only integral types are supported
+		panic(fmt.Errorf("AsIndex ValueUint32() unsupported type: %T", value))
+	}
+}
+
+func (s *SmallScalarMemoTable) GetNull() int32 {
+	return s.valueToIndex[smallScalarMemoTableMaxCardinality]
+}
+
+func (s *SmallScalarMemoTable) GetOrInsert(
+	value arrow.Scalar, onFound func(int32), onNotFound func(int32)) (int32, error) {
+
+	valueIndex := s.AsIndex(value)
+	memoIndex := s.valueToIndex[valueIndex]
+	if memoIndex == kKeyNotFound {
+		memoIndex = int32(len(s.indexToValue))
+		s.indexToValue = append(s.indexToValue, value)
+		s.valueToIndex[valueIndex] = memoIndex
+		debug.Assert(memoIndex < smallScalarMemoTableMaxCardinality+1,
+			fmt.Sprintf(
+				"Assert: %d < %d", memoIndex, smallScalarMemoTableMaxCardinality+1))
+		if onNotFound != nil {
+			onNotFound(memoIndex)
+		}
+	} else {
+		if onFound != nil {
+			onFound(memoIndex)
+		}
+	}
+	return memoIndex, nil
+}
+
+func (s *SmallScalarMemoTable) GetOrInsertNull(
+	onFound func(int32), onNotFound func(int32)) int32 {
+
+	memoIndex := s.GetNull()
+	if memoIndex == kKeyNotFound {
+		memoIndex = s.Size()
+		s.valueToIndex[smallScalarMemoTableMaxCardinality] = memoIndex
+		s.indexToValue = append(s.indexToValue, arrow.NewNullScalar(nil))
+		if onNotFound != nil {
+			onNotFound(memoIndex)
+		}
+	} else {
+		if onFound != nil {
+			onFound(memoIndex)
+		}
+	}
+	return memoIndex
+}
+
+// The number of entries in the memo table
+// (which is also 1 + the largest memo index)
+func (s *SmallScalarMemoTable) Size() int32 {
+	return int32(len(s.indexToValue))
+}
+
+// Copy values starting from index `start` into `out_data`
+// Check the size in debug mode.
+func (s *SmallScalarMemoTable) CopyValues(start int32, outSize int64, outData interface{}) {
+	debug.AssertGE(int(start), int(0))
+	debug.AssertLE(int(start), len(s.indexToValue))
+	outDataScalars := outData.([]arrow.Scalar)
+	copy(outDataScalars, s.indexToValue[start:])
 }
 
 func ScalarComputeHash(scalar arrow.Scalar) (uint64, error) {
@@ -408,4 +510,5 @@ func CompareScalars(left, right arrow.Scalar) bool {
 
 var (
 	_ MemoTable = (*ScalarMemoTable)(nil)
+	_ MemoTable = (*SmallScalarMemoTable)(nil)
 )

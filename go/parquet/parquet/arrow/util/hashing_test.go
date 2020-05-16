@@ -281,7 +281,6 @@ func TestScalarMemoTableInt8(t *testing.T) {
 	assertScalarElementsEq(t, values, want)
 }
 
-// TODO: Implement NewSmallScalarMemoTable
 func TestScalarMemoTableBool(t *testing.T) {
 	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer pool.AssertSize(t, 0)
@@ -302,7 +301,9 @@ func TestScalarMemoTableBool(t *testing.T) {
 
 	testutil.AssertEqInt(t, int(table.Size()), 3)
 	want := []arrow.Scalar{toScalar(true), nil, toScalar(false)}
-	assertScalarElementsEq(t, table.values(), want)
+	values := make([]arrow.Scalar, table.Size())
+	table.CopyValues(0, -1, values)
+	assertScalarElementsEq(t, values, want)
 }
 
 func TestScalarMemoTableFloat64(t *testing.T) {

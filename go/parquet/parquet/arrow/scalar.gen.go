@@ -68,6 +68,21 @@ func (s BooleanScalar) Value() bool {
 	return s.value
 }
 
+func (s BooleanScalar) ValueUint32() uint32 {
+	if s.value {
+		return 1
+	} else {
+		return 0
+	}
+}
+func (s BooleanScalar) ValueUint64() uint64 {
+	if s.value {
+		return 1
+	} else {
+		return 0
+	}
+}
+
 func (s BooleanScalar) ValueBytes() []byte {
 	b := make([]byte, 1)
 	arrow.BooleanTraits.PutValue(b, s.value)
@@ -136,6 +151,13 @@ func (s Int8Scalar) NotEquals(other Scalar) bool {
 
 func (s Int8Scalar) Value() int8 {
 	return s.value
+}
+
+func (s Int8Scalar) ValueUint32() uint32 {
+	return uint32(s.value)
+}
+func (s Int8Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
 }
 
 func (s Int8Scalar) ValueBytes() []byte {
@@ -208,6 +230,13 @@ func (s Int16Scalar) Value() int16 {
 	return s.value
 }
 
+func (s Int16Scalar) ValueUint32() uint32 {
+	return uint32(s.value)
+}
+func (s Int16Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
+}
+
 func (s Int16Scalar) ValueBytes() []byte {
 	b := make([]byte, 2)
 	arrow.Int16Traits.PutValue(b, s.value)
@@ -276,6 +305,13 @@ func (s Int32Scalar) NotEquals(other Scalar) bool {
 
 func (s Int32Scalar) Value() int32 {
 	return s.value
+}
+
+func (s Int32Scalar) ValueUint32() uint32 {
+	return uint32(s.value)
+}
+func (s Int32Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
 }
 
 func (s Int32Scalar) ValueBytes() []byte {
@@ -348,6 +384,10 @@ func (s Int64Scalar) Value() int64 {
 	return s.value
 }
 
+func (s Int64Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
+}
+
 func (s Int64Scalar) ValueBytes() []byte {
 	b := make([]byte, 8)
 	arrow.Int64Traits.PutValue(b, s.value)
@@ -416,6 +456,13 @@ func (s Uint8Scalar) NotEquals(other Scalar) bool {
 
 func (s Uint8Scalar) Value() uint8 {
 	return s.value
+}
+
+func (s Uint8Scalar) ValueUint32() uint32 {
+	return uint32(s.value)
+}
+func (s Uint8Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
 }
 
 func (s Uint8Scalar) ValueBytes() []byte {
@@ -488,6 +535,13 @@ func (s Uint16Scalar) Value() uint16 {
 	return s.value
 }
 
+func (s Uint16Scalar) ValueUint32() uint32 {
+	return uint32(s.value)
+}
+func (s Uint16Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
+}
+
 func (s Uint16Scalar) ValueBytes() []byte {
 	b := make([]byte, 2)
 	arrow.Uint16Traits.PutValue(b, s.value)
@@ -558,6 +612,13 @@ func (s Uint32Scalar) Value() uint32 {
 	return s.value
 }
 
+func (s Uint32Scalar) ValueUint32() uint32 {
+	return uint32(s.value)
+}
+func (s Uint32Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
+}
+
 func (s Uint32Scalar) ValueBytes() []byte {
 	b := make([]byte, 4)
 	arrow.Uint32Traits.PutValue(b, s.value)
@@ -626,6 +687,10 @@ func (s Uint64Scalar) NotEquals(other Scalar) bool {
 
 func (s Uint64Scalar) Value() uint64 {
 	return s.value
+}
+
+func (s Uint64Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
 }
 
 func (s Uint64Scalar) ValueBytes() []byte {
@@ -1256,6 +1321,13 @@ func (s Date32Scalar) Value() arrow.Date32 {
 	return s.value
 }
 
+func (s Date32Scalar) ValueUint32() uint32 {
+	return uint32(s.value)
+}
+func (s Date32Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
+}
+
 func (s Date32Scalar) ValueBytes() []byte {
 	b := make([]byte, 4)
 	arrow.Date32Traits.PutValue(b, s.value)
@@ -1324,6 +1396,10 @@ func (s Date64Scalar) NotEquals(other Scalar) bool {
 
 func (s Date64Scalar) Value() arrow.Date64 {
 	return s.value
+}
+
+func (s Date64Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
 }
 
 func (s Date64Scalar) ValueBytes() []byte {
@@ -1396,6 +1472,13 @@ func (s Time32Scalar) Value() arrow.Time32 {
 	return s.value
 }
 
+func (s Time32Scalar) ValueUint32() uint32 {
+	return uint32(s.value)
+}
+func (s Time32Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
+}
+
 func (s Time32Scalar) ValueBytes() []byte {
 	b := make([]byte, 4)
 	arrow.Time32Traits.PutValue(b, s.value)
@@ -1464,6 +1547,10 @@ func (s Time64Scalar) NotEquals(other Scalar) bool {
 
 func (s Time64Scalar) Value() arrow.Time64 {
 	return s.value
+}
+
+func (s Time64Scalar) ValueUint64() uint64 {
+	return uint64(s.value)
 }
 
 func (s Time64Scalar) ValueBytes() []byte {
@@ -1536,6 +1623,10 @@ func (s TimestampScalar) Value() arrow.Timestamp {
 	return s.value
 }
 
+func (s TimestampScalar) ValueUint64() uint64 {
+	return uint64(s.value)
+}
+
 func (s TimestampScalar) ValueBytes() []byte {
 	b := make([]byte, 8)
 	arrow.TimestampTraits.PutValue(b, s.value)
@@ -1604,6 +1695,13 @@ func (s MonthIntervalScalar) NotEquals(other Scalar) bool {
 
 func (s MonthIntervalScalar) Value() arrow.MonthInterval {
 	return s.value
+}
+
+func (s MonthIntervalScalar) ValueUint32() uint32 {
+	return uint32(s.value)
+}
+func (s MonthIntervalScalar) ValueUint64() uint64 {
+	return uint64(s.value)
 }
 
 func (s MonthIntervalScalar) ValueBytes() []byte {
@@ -1744,6 +1842,10 @@ func (s DurationScalar) NotEquals(other Scalar) bool {
 
 func (s DurationScalar) Value() arrow.Duration {
 	return s.value
+}
+
+func (s DurationScalar) ValueUint64() uint64 {
+	return uint64(s.value)
 }
 
 func (s DurationScalar) ValueBytes() []byte {

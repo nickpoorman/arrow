@@ -108,6 +108,36 @@ func (s {{.T}}Scalar) Value() {{.CType}} {
 	return s.value
 }
 
+{{if and .IsIntegral .SizeBytes}}
+{{if le .SizeBytes "4"}}
+func (s {{.T}}Scalar) ValueUint32() uint32 {
+	{{- if eq .T "Boolean"}}
+	if s.value {
+		return 1
+	} else {
+		return 0
+	}
+	{{- else}}
+	return uint32(s.value)
+	{{- end}}
+}
+{{- end}}
+
+{{- if le .SizeBytes "8"}}
+func (s {{.T}}Scalar) ValueUint64() uint64 {
+	{{- if eq .T "Boolean"}}
+	if s.value {
+		return 1
+	} else {
+		return 0
+	}
+	{{- else}}
+	return uint64(s.value)
+	{{- end}}
+}
+{{- end}}
+{{- end}}
+
 func (s {{.T}}Scalar) ValueBytes() []byte {
 	{{- if .SizeBytes}}
 	b := make([]byte, {{.SizeBytes}})
