@@ -18,3 +18,33 @@ package debug
 
 // Assert will panic with msg if cond is false.
 func Assert(cond bool, msg interface{}) {}
+
+// AssertGT asserts that the first element is greater than the second
+//
+//    assert.AssertGT(t, 2, 1)
+//    assert.AssertGT(t, float64(2), float64(1))
+//    assert.AssertGT(t, "b", "a")
+func AssertGT(e1 interface{}, e2 interface{}, msgAndArgs ...interface{}) {}
+
+// AssertGE asserts that the first element is greater than or equal to the second
+//
+//    assert.AssertGE(t, 2, 1)
+//    assert.AssertGE(t, 2, 2)
+//    assert.AssertGE(t, "b", "a")
+//    assert.AssertGE(t, "b", "b")
+func AssertGE(e1 interface{}, e2 interface{}, msgAndArgs ...interface{}) {}
+
+// AssertLT asserts that the first element is less than the second
+//
+//    assert.AssertLT(t, 1, 2)
+//    assert.AssertLT(t, float64(1), float64(2))
+//    assert.AssertLT(t, "a", "b")
+func AssertLT(e1 interface{}, e2 interface{}, msgAndArgs ...interface{}) {}
+
+// AssertLE asserts that the first element is less than or equal to the second
+//
+//    assert.AssertLE(t, 1, 2)
+//    assert.AssertLE(t, 2, 2)
+//    assert.AssertLE(t, "a", "b")
+//    assert.AssertLE(t, "b", "b")
+func AssertLE(e1 interface{}, e2 interface{}, msgAndArgs ...interface{}) {}
