@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"hash/maphash"
 
-	arrowCore "github.com/apache/arrow/go/arrow"
+	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/array"
 	"github.com/apache/arrow/go/arrow/bitutil"
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 	"github.com/nickpoorman/arrow-parquet-go/internal/util"
-	"github.com/nickpoorman/arrow-parquet-go/parquet/arrow"
 )
 
 var hashSeed = maphash.MakeSeed()
@@ -252,16 +251,16 @@ type MemoTable interface {
 	CopyValues(start int32, outSize int64, outData interface{})
 }
 
-func NewMemoTable(pool memory.Allocator, entries int /* default: 0 */, dataType arrowCore.DataType) MemoTable {
+func NewMemoTable(pool memory.Allocator, entries int /* default: 0 */, dataType arrow.DataType) MemoTable {
 	switch dt := dataType.(type) {
-	case arrowCore.BinaryDataType:
+	case arrow.BinaryDataType:
 		valueSize := -1
 		switch dt := dataType.(type) {
 		case interface{ BitWidth() int }:
 			valueSize = dt.BitWidth() >> 3
 		}
 		return NewBinaryMemoTable(pool, entries, valueSize, dt)
-	case arrowCore.DataType:
+	case arrow.DataType:
 		bitWidth := -1
 		switch dt := dataType.(type) {
 		case interface{ BitWidth() int }:
@@ -566,7 +565,7 @@ type BinaryMemoTable struct {
 
 func NewBinaryMemoTable(pool memory.Allocator, entries int, /* default: 0 */
 	valuesSize int, /* default: -1 */
-	dataType arrowCore.BinaryDataType) *BinaryMemoTable {
+	dataType arrow.BinaryDataType) *BinaryMemoTable {
 
 	table := &BinaryMemoTable{
 		hashTable:     NewHashTable(pool, uint64(entries)),

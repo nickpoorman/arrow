@@ -23,6 +23,7 @@ func (t *{{.Name}}Type) ID() Type       { return {{.Name|upper}} }
 func (t *{{.Name}}Type) Name() string   { return "{{.Name|lower}}" }
 func (t *{{.Name}}Type) String() string { return "{{.Name|lower}}" }
 func (t *{{.Name}}Type) BitWidth() int  { return {{.Size}} }
+func (t *{{.Name}}Type) BuildScalar(v interface{}) Scalar { return New{{.Name}}ScalarInterface(v, t) }
 
 
 {{end}}

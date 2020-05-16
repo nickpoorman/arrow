@@ -39,9 +39,10 @@ func ListOf(t DataType) *ListType {
 	return &ListType{elem: t}
 }
 
-func (*ListType) ID() Type         { return LIST }
-func (*ListType) Name() string     { return "list" }
-func (t *ListType) String() string { return fmt.Sprintf("list<item: %v>", t.elem) }
+func (*ListType) ID() Type                           { return LIST }
+func (*ListType) Name() string                       { return "list" }
+func (t *ListType) String() string                   { return fmt.Sprintf("list<item: %v>", t.elem) }
+func (t *ListType) BuildScalar(v interface{}) Scalar { return NewListScalarInterface(v, t) }
 
 // Elem returns the ListType's element type.
 func (t *ListType) Elem() DataType { return t.elem }
@@ -79,6 +80,9 @@ func (t *FixedSizeListType) Elem() DataType { return t.elem }
 
 // Len returns the FixedSizeListType's size.
 func (t *FixedSizeListType) Len() int32 { return t.n }
+func (t *FixedSizeListType) BuildScalar(v interface{}) Scalar {
+	return NewFixedSizeListScalarInterface(v, t)
+}
 
 // StructType describes a nested type parameterized by an ordered sequence
 // of relative types, called its fields.
@@ -147,6 +151,8 @@ func (t *StructType) FieldByName(name string) (Field, bool) {
 	}
 	return t.fields[i], true
 }
+
+func (t *StructType) BuildScalar(v interface{}) Scalar { return NewStructScalarInterface(v, t) }
 
 type Field struct {
 	Name     string   // Field name

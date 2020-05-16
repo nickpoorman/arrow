@@ -284,6 +284,7 @@ func TestScalarMemoTableInt8(t *testing.T) {
 	assertScalarElementsEq(t, values, want)
 }
 
+// TODO(nickpoorman): Benchmark this to see if it's actually any faster
 func TestSmallScalarMemoTableBool(t *testing.T) {
 	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer pool.AssertSize(t, 0)

@@ -2,93 +2,93 @@
     {
         "T": "Boolean",
         "CType": "bool",
-        "DefaultDataType": "arrow.FixedWidthTypes.Boolean",
+        "DefaultDataType": "FixedWidthTypes.Boolean",
         "SizeBytes": "1",
         "IsIntegral": true
     },
     {
         "T": "Int8",
         "CType": "int8",
-        "DefaultDataType": "arrow.PrimitiveTypes.Int8",
+        "DefaultDataType": "PrimitiveTypes.Int8",
         "SizeBytes": "1",
         "IsIntegral": true
     },
     {
         "T": "Int16",
         "CType": "int16",
-        "DefaultDataType": "arrow.PrimitiveTypes.Int16",
+        "DefaultDataType": "PrimitiveTypes.Int16",
         "SizeBytes": "2",
         "IsIntegral": true
     },
     {
         "T": "Int32",
         "CType": "int32",
-        "DefaultDataType": "arrow.PrimitiveTypes.Int32",
+        "DefaultDataType": "PrimitiveTypes.Int32",
         "SizeBytes": "4",
         "IsIntegral": true
     },
     {
         "T": "Int64",
         "CType": "int64",
-        "DefaultDataType": "arrow.PrimitiveTypes.Int64",
+        "DefaultDataType": "PrimitiveTypes.Int64",
         "SizeBytes": "8",
         "IsIntegral": true
     },
     {
         "T": "Uint8",
         "CType": "uint8",
-        "DefaultDataType": "arrow.PrimitiveTypes.Uint8",
+        "DefaultDataType": "PrimitiveTypes.Uint8",
         "SizeBytes": "1",
         "IsIntegral": true
     },
     {
         "T": "Uint16",
         "CType": "uint16",
-        "DefaultDataType": "arrow.PrimitiveTypes.Uint16",
+        "DefaultDataType": "PrimitiveTypes.Uint16",
         "SizeBytes": "2",
         "IsIntegral": true
     },
     {
         "T": "Uint32",
         "CType": "uint32",
-        "DefaultDataType": "arrow.PrimitiveTypes.Uint32",
+        "DefaultDataType": "PrimitiveTypes.Uint32",
         "SizeBytes": "4",
         "IsIntegral": true
     },
     {
         "T": "Uint64",
         "CType": "uint64",
-        "DefaultDataType": "arrow.PrimitiveTypes.Uint64",
+        "DefaultDataType": "PrimitiveTypes.Uint64",
         "SizeBytes": "8",
         "IsIntegral": true
     },
     {
         "T": "Float16",
         "CType": "float16.Num",
-        "DefaultDataType": "arrow.FixedWidthTypes.Float16",
+        "DefaultDataType": "FixedWidthTypes.Float16",
         "SizeBytes": "2"
     },
     {
         "T": "Float32",
         "CType": "float32",
-        "DefaultDataType": "arrow.PrimitiveTypes.Float32",
+        "DefaultDataType": "PrimitiveTypes.Float32",
         "SizeBytes": "4"
     },
     {
         "T": "Float64",
         "CType": "float64",
-        "DefaultDataType": "arrow.PrimitiveTypes.Float64",
+        "DefaultDataType": "PrimitiveTypes.Float64",
         "SizeBytes": "8"
     },
     {
         "T": "Binary",
         "CType": "*memory.Buffer",
-        "DefaultDataType": "arrow.BinaryTypes.Binary"
+        "DefaultDataType": "BinaryTypes.Binary"
     },
     {
         "T": "String",
         "CType": "*memory.Buffer",
-        "DefaultDataType": "arrow.BinaryTypes.String"
+        "DefaultDataType": "BinaryTypes.String"
     },
     {
         "T": "LargeBinary",
@@ -103,87 +103,87 @@
     {
         "T": "FixedSizeBinary",
         "CType": "*memory.Buffer",
-        "DefaultDataType": "(*arrow.FixedSizeBinaryType)(nil)"
+        "DefaultDataType": "(*FixedSizeBinaryType)(nil)"
     },
     {
         "T": "Date32",
-        "CType": "arrow.Date32",
-        "DefaultDataType": "arrow.FixedWidthTypes.Date32",
+        "CType": "Date32",
+        "DefaultDataType": "FixedWidthTypes.Date32",
         "SizeBytes": "4",
         "IsIntegral": true
     },
     {
         "T": "Date64",
-        "CType": "arrow.Date64",
-        "DefaultDataType": "arrow.FixedWidthTypes.Date64",
+        "CType": "Date64",
+        "DefaultDataType": "FixedWidthTypes.Date64",
         "SizeBytes": "8",
         "IsIntegral": true
     },
     {
         "T": "Time32",
-        "CType": "arrow.Time32",
-        "DefaultDataType": "arrow.FixedWidthTypes.Time32ms",
+        "CType": "Time32",
+        "DefaultDataType": "FixedWidthTypes.Time32ms",
         "SizeBytes": "4",
         "IsIntegral": true
     },
     {
         "T": "Time64",
-        "CType": "arrow.Time64",
-        "DefaultDataType": "arrow.FixedWidthTypes.Time64ns",
+        "CType": "Time64",
+        "DefaultDataType": "FixedWidthTypes.Time64ns",
         "SizeBytes": "8",
         "IsIntegral": true
     },
     {
         "T": "Timestamp",
-        "CType": "arrow.Timestamp",
-        "DefaultDataType": "arrow.FixedWidthTypes.Timestamp_ms",
+        "CType": "Timestamp",
+        "DefaultDataType": "FixedWidthTypes.Timestamp_ms",
         "SizeBytes": "8",
         "IsIntegral": true
     },
     {
         "T": "MonthInterval",
-        "CType": "arrow.MonthInterval",
-        "DefaultDataType": "arrow.FixedWidthTypes.MonthInterval",
+        "CType": "MonthInterval",
+        "DefaultDataType": "FixedWidthTypes.MonthInterval",
         "SizeBytes": "4",
         "IsIntegral": true
     },
     {
         "T": "DayTimeInterval",
-        "CType": "arrow.DayTimeInterval",
-        "DefaultDataType": "arrow.FixedWidthTypes.DayTimeInterval",
+        "CType": "DayTimeInterval",
+        "DefaultDataType": "FixedWidthTypes.DayTimeInterval",
         "SizeBytes": "8"
     },
     {
         "T": "Duration",
-        "CType": "arrow.Duration",
-        "DefaultDataType": "arrow.FixedWidthTypes.Duration_ms",
+        "CType": "Duration",
+        "DefaultDataType": "FixedWidthTypes.Duration_ms",
         "SizeBytes": "8",
         "IsIntegral": true
     },
     {
         "T": "Decimal128",
         "CType": "decimal128.Num",
-        "DefaultDataType": "(*arrow.Decimal128Type)(nil)",
+        "DefaultDataType": "(*Decimal128Type)(nil)",
         "SizeBytes": "16"
     },
     {
         "T": "List",
-        "CType": "array.Interface",
-        "DefaultDataType": "(*arrow.ListType)(nil)"
+        "CType": "interface{}",
+        "DefaultDataType": "(*ListType)(nil)"
     },
     {
         "T": "LargeList",
-        "CType": "array.Interface",
+        "CType": "interface{}",
         "DefaultDataType": "UnsupportedTypes.LargeList"
     },
     {
         "T": "Map",
-        "CType": "array.Interface",
+        "CType": "interface{}",
         "DefaultDataType": "UnsupportedTypes.Map"
     },
     {
         "T": "FixedSizeList",
-        "CType": "array.Interface",
-        "DefaultDataType": "(*arrow.FixedSizeListType)(nil)"
+        "CType": "interface{}",
+        "DefaultDataType": "(*FixedSizeListType)(nil)"
     }
 ]

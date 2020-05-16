@@ -127,6 +127,8 @@ type DataType interface {
 	ID() Type
 	// Name is name of the data type.
 	Name() string
+	// Scalar
+	BuildScalar(v interface{}) Scalar
 }
 
 // FixedWidthDataType is the representation of an Arrow type that

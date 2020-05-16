@@ -32,6 +32,7 @@ assembly:
 generate: bin/tmpl
 	bin/tmpl -i -data=numeric.tmpldata type_traits_numeric.gen.go.tmpl type_traits_numeric.gen_test.go.tmpl array/numeric.gen.go.tmpl array/numericbuilder.gen_test.go.tmpl  array/numericbuilder.gen.go.tmpl array/bufferbuilder_numeric.gen.go.tmpl
 	bin/tmpl -i -data=datatype_numeric.gen.go.tmpldata datatype_numeric.gen.go.tmpl
+	bin/tmpl -i -data=scalar.json scalar.gen.go.tmpl
 	@$(MAKE) -C math generate
 
 fmt: $(SOURCES_NO_VENDOR)

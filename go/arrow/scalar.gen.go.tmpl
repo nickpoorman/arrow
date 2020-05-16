@@ -1,7 +1,6 @@
 package arrow
 
 import (
-	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/array"
 	"github.com/apache/arrow/go/arrow/decimal128"
 	"github.com/apache/arrow/go/arrow/float16"
@@ -11,7 +10,7 @@ import (
 {{range .In}}
 type {{.T}}Scalar struct {
 	// The type of the scalar value
-	dataType arrow.DataType
+	dataType DataType
 
 	// Whether the value is valid (not null) or not
 	isValid bool
@@ -19,7 +18,29 @@ type {{.T}}Scalar struct {
 	value {{.CType}}
 }
 
-func New{{.T}}Scalar(value {{.CType}}, dataType arrow.DataType) {{.T}}Scalar {
+func New{{.T}}ScalarInterface(value interface{}, dataType DataType) {{.T}}Scalar {
+	if value == nil {
+		return New{{.T}}ScalarInvalid(dataType)
+	}
+
+	switch v := value.(type) {
+	{{- if eq .CType "*memory.Buffer"}}
+	{{- if eq .T "String" }}
+	case string:
+		return New{{.T}}ScalarBytes([]byte(v), dataType)
+	{{- end}}
+	case []byte:
+		return New{{.T}}ScalarBytes(v, dataType)
+	{{- end}}
+	case {{.CType}}:
+		return New{{.T}}Scalar(v, dataType)
+	{{- /* TODO: implement UnsupportedTypes, FixedSizeList, List */}}
+	default:
+		panic(fmt.Sprintf("New{{.T}}ScalarInterface unsupported value type: %T", v))
+	}
+}
+
+func New{{.T}}Scalar(value {{.CType}}, dataType DataType) {{.T}}Scalar {
 	{{- if .DefaultDataType}}
 	if dataType == nil {
 		dataType = {{.DefaultDataType}}
@@ -32,7 +53,7 @@ func New{{.T}}Scalar(value {{.CType}}, dataType arrow.DataType) {{.T}}Scalar {
 	}
 }
 
-func New{{.T}}ScalarInvalid(dataType arrow.DataType) {{.T}}Scalar {
+func New{{.T}}ScalarInvalid(dataType DataType) {{.T}}Scalar {
 	{{- if .DefaultDataType}}
 	if dataType == nil {
 		dataType = {{.DefaultDataType}}
@@ -65,7 +86,7 @@ func New{{.T}}ScalarPrimitive(value {{.CType}}) {{.T}}Scalar {
 
 
 
-func New{{.T}}ScalarBytes(value []byte, dataType arrow.DataType) {{.T}}Scalar {
+func New{{.T}}ScalarBytes(value []byte, dataType DataType) {{.T}}Scalar {
 	{{- if eq .CType "*memory.Buffer"}}
 	return New{{.T}}Scalar(memory.NewBufferBytes(value), dataType)
 	{{- else if contains .DefaultDataType "UnsupportedTypes"}}
@@ -77,7 +98,7 @@ func New{{.T}}ScalarBytes(value []byte, dataType arrow.DataType) {{.T}}Scalar {
 	// TODO(nickpoorman): implement
 	panic("not implemented")
 	{{- else}}
-	return New{{.T}}Scalar(arrow.{{.T}}Traits.GetValue(value), dataType)
+	return New{{.T}}Scalar({{.T}}Traits.GetValue(value), dataType)
 	{{- end}}
 }
 
@@ -88,11 +109,10 @@ func (s {{.T}}Scalar) Equals(other Scalar) bool {
 	if s.value == nil && right.value == nil { return true }
 	if s.value == nil || right.value == nil { return false }
 	return s.value.Equals(right.value)
-	{{- else if eq .CType "array.Interface"}}
+	{{- else if eq .CType "interface{}"}}
 	if !ok { return false }
 	if s.value == nil && right.value == nil { return true }
 	if s.value == nil || right.value == nil { return false }
-	// TODO(nickpoorman): array.Interface needs an Equals method
 	panic("not implemented")
 	// return s.value.Equals(right.value)
 	{{- else}}
@@ -141,7 +161,7 @@ func (s {{.T}}Scalar) ValueUint64() uint64 {
 func (s {{.T}}Scalar) ValueBytes() []byte {
 	{{- if .SizeBytes}}
 	b := make([]byte, {{.SizeBytes}})
-	arrow.{{.T}}Traits.PutValue(b, s.value)
+	{{.T}}Traits.PutValue(b, s.value)
 	return b
 	{{- else if eq .CType "*memory.Buffer"}}
 	return s.value.Bytes()
@@ -150,7 +170,7 @@ func (s {{.T}}Scalar) ValueBytes() []byte {
 	{{- end}}
 }
 
-func (s {{.T}}Scalar) DataType() arrow.DataType {
+func (s {{.T}}Scalar) DataType() DataType {
 	return s.dataType
 }
 
@@ -193,7 +213,7 @@ var (
 
 {{/* Probably don't want to do this since the types aren't one-to-one */}}
 {{/* This would have to be matched off of dataType */}}
-{{/* func newScalarGeneratedTypes(value interface{}, dataType arrow.DataType) (Scalar, bool) {
+{{/* func newScalarGeneratedTypes(value interface{}, dataType DataType) (Scalar, bool) {
 	switch v := value.(type) {
 	{{- range .In}}
 	case {{.CType}}:

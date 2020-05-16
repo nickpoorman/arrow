@@ -146,8 +146,9 @@ func fileMode(path string) os.FileMode {
 }
 
 var funcs = template.FuncMap{
-	"lower": strings.ToLower,
-	"upper": strings.ToUpper,
+	"lower":    strings.ToLower,
+	"upper":    strings.ToUpper,
+	"contains": strings.Contains,
 }
 
 func process(data interface{}, specs []pathSpec) {

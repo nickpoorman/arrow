@@ -27,7 +27,7 @@ SOURCES_NO_VENDOR := $(shell find . -path ./vendor -prune -o -name "*.go" -not -
 
 generate: bin/tmpl
 	# bin/tmpl -i -data=numeric.tmpldata parquet/arrow/scalar.gen.go.tmpl
-	bin/tmpl -i -data=parquet/arrow/scalar.json parquet/arrow/scalar.gen.go.tmpl
+	# bin/tmpl -i -data=parquet/arrow/scalar.json parquet/arrow/scalar.gen.go.tmpl
 
 bin/tmpl: _tools/tmpl/main.go
 	$(GO_BUILD) -o $@ ./_tools/tmpl

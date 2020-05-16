@@ -311,6 +311,8 @@ const kInitialHashTableSize = 1 << 10
 type Int64DictEncoder struct {
 	encoderBase
 
+	dataType arrow.DataType
+
 	dtype PhysicalType
 	sink  *array.Int64BufferBuilder
 
@@ -324,14 +326,16 @@ type Int64DictEncoder struct {
 }
 
 //+ func New{{.DType}}DictEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*{{.DType}}DictEncoder, error) {
-func NewInt64DictEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64DictEncoder, error) {
+func NewInt64DictEncoder(descr *ColumnDescriptor, pool memory.Allocator, dataType arrow.DataType) (*Int64DictEncoder, error) {
 	return &Int64DictEncoder{
 		encoderBase: newEncoderBase(descr, EncodingType_PLAIN_DICTIONARY, pool),
+
+		dataType: dataType,
 
 		dtype: Int64Type,
 		sink:  array.NewInt64BufferBuilder(pool),
 
-		memoTable: utilext.NewScalarMemoTable(pool, kInitialHashTableSize),
+		memoTable: utilext.NewMemoTable(pool, kInitialHashTableSize, dataType),
 	}, nil
 }
 
@@ -388,8 +392,8 @@ func (e *Int64DictEncoder) PutValue(v int64) error {
 		e.dictEncodedSize += binary.Size(v) // SIZE_OF_T // TODO: Maybe we generate these?
 	}
 
-	var memoIndex int32
-	if err := e.memoTable.GetOrInsert(v, onFound, onNotFound, &memoIndex); err != nil {
+	memoIndex, err := e.memoTable.GetOrInsert(e.dataType.BuildScalar(v), onFound, onNotFound)
+	if err != nil {
 		return err
 	}
 	e.bufferedIndices = append(e.bufferedIndices, memoIndex)
@@ -517,11 +521,12 @@ func (e *Int64DictEncoder) PutDictionary(values array.Interface) error {
 	//+ e.dictEncodedSize += int({{.Size}} * data.Len())
 	e.dictEncodedSize += int(binary.Size(int64(0)) * data.Len())
 	for i := 0; i < data.Len(); i++ {
-		var unusedMemoIndex int32
-		if err := e.memoTable.GetOrInsert(
-			data.Value(i), utilext.OnFoundNoOp,
-			utilext.OnNotFoundNoOp, &unusedMemoIndex,
-		); err != nil {
+		_, err := e.memoTable.GetOrInsert(
+			e.dataType.BuildScalar(data.Value(i)),
+			utilext.OnFoundNoOp,
+			utilext.OnNotFoundNoOp,
+		)
+		if err != nil {
 			return err
 		}
 	}
@@ -861,13 +866,13 @@ func (d *Int64DictDecoder) DecodeBuffer(buffer interface{}, makeValues int) (int
 
 func NewTypedEncoder(
 	dtype PhysicalType, encoding EncodingType, useDictionary bool,
-	descr *ColumnDescriptor, pool memory.Allocator) (TypedEncoder, error) {
+	descr *ColumnDescriptor, pool memory.Allocator, dataType arrow.DataType) (TypedEncoder, error) {
 
 	if pool == nil {
 		pool = memory.DefaultAllocator
 	}
 
-	encoder, err := NewEncoder(dtype.typeNum(), encoding, useDictionary, descr, pool)
+	encoder, err := NewEncoder(dtype.typeNum(), encoding, useDictionary, descr, pool, dataType)
 	if err != nil {
 		return nil, err
 	}
@@ -877,7 +882,7 @@ func NewTypedEncoder(
 // Encode goes from Arrow into Parquet
 func NewEncoder(
 	typeNum Type, encoding EncodingType, useDictionary bool,
-	descr *ColumnDescriptor, pool memory.Allocator) (Encoder, error) {
+	descr *ColumnDescriptor, pool memory.Allocator, dataType arrow.DataType) (Encoder, error) {
 
 	if pool == nil {
 		pool = memory.DefaultAllocator
@@ -886,7 +891,7 @@ func NewEncoder(
 	if useDictionary {
 		switch typeNum {
 		case Type_INT64:
-			return NewInt64DictEncoder(descr, pool)
+			return NewInt64DictEncoder(descr, pool, dataType)
 		default:
 			return nil, fmt.Errorf(
 				"dict encoder for %s not implemented: %w",
