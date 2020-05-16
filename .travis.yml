@@ -19,6 +19,10 @@ dist: bionic
 
 language: minimal
 
+cache:
+  directories:
+    - $TRAVIS_BUILD_DIR/.docker
+
 addons:
   apt:
     packages:
@@ -29,27 +33,29 @@ services:
 
 jobs:
   include:
+    - name: "C++ on ARM"
+      os: linux
+      arch: arm64
+      env:
+        ARCH: arm64v8
+        ARROW_CI_MODULES: "CPP"
+        DOCKER_IMAGE_ID: ubuntu-cpp
+        UBUNTU: "20.04"
     - name: "C++ on s390x"
       os: linux
       arch: s390x
       env:
         ARCH: s390x
         ARROW_CI_MODULES: "CPP"
-        ARROW_COMPUTE: "OFF"
-        ARROW_CSV: "OFF"
-        ARROW_DATASET: "OFF"
-        ARROW_FILESYSTEM: "OFF"
-        ARROW_FLIGHT: "OFF"
-        ARROW_GANDIVA: "OFF"
-        ARROW_HDFS: "OFF"
-        ARROW_IPC: "OFF"
-        ARROW_ORC: "OFF"
+        ARROW_FLIGHT: "ON"
         ARROW_PARQUET: "OFF"
-        ARROW_PLASMA: "OFF"
+        DOCKER_IMAGE_ID: ubuntu-cpp
         PARQUET_BUILD_EXAMPLES: "OFF"
         PARQUET_BUILD_EXECUTABLES: "OFF"
-        DOCKER_IMAGE_ID: ubuntu-cpp
+        Protobuf_SOURCE: "BUNDLED"
         UBUNTU: "20.04"
+        cares_SOURCE: "BUNDLED"
+        gRPC_SOURCE: "BUNDLED"
   allow_failures:
     - arch: s390x
 
@@ -64,7 +70,7 @@ before_install:
     arrow_ci_affected=no
     for arrow_ci_module in ${ARROW_CI_MODULES}; do
       arrow_ci_affected_variable=ARROW_CI_${arrow_ci_module}_AFFECTED
-      if [ "$(eval 'echo ${arrow_ci_affected_variable}')" != "1" ]; then
+      if [ "$(eval "echo \$${arrow_ci_affected_variable}")" = "1" ]; then
         arrow_ci_affected=yes
       fi
     done
@@ -83,22 +89,19 @@ script:
     ulimit -c unlimited || :
   - |
     archery docker run \
-      -e ARROW_COMPUTE=${ARROW_COMPUTE:-ON} \
-      -e ARROW_CSV=${ARROW_CSV:-ON} \
-      -e ARROW_DATASET=${ARROW_DATASET:-ON} \
-      -e ARROW_FILESYSTEM=${ARROW_FILESYSTEM:-ON} \
       -e ARROW_FLIGHT=${ARROW_FLIGHT:-OFF} \
-      -e ARROW_GANDIVA=${ARROW_GANDIVA:-ON} \
-      -e ARROW_HDFS=${ARROW_HDFS:-ON} \
-      -e ARROW_IPC=${ARROW_IPC:-ON} \
-      -e ARROW_ORC=${ARROW_ORC:-ON} \
       -e ARROW_PARQUET=${ARROW_PARQUET:-ON} \
-      -e ARROW_PLASMA=${ARROW_PLASMA:-ON} \
       -e PARQUET_BUILD_EXAMPLES=${PARQUET_BUILD_EXAMPLES:-ON} \
       -e PARQUET_BUILD_EXECUTABLES=${PARQUET_BUILD_EXECUTABLES:-ON} \
+      -e Protobuf_SOURCE=${Protobuf_SOURCE:-} \
+      -e cares_SOURCE=${cares_SOURCE:-} \
+      -e gRPC_SOURCE=${gRPC_SOURCE:-} \
       --volume ${PWD}/build:/build \
       ${DOCKER_IMAGE_ID}
 
 after_success:
   - |
-    archery docker push ${DOCKER_IMAGE_ID} || :
+    if [ "${TRAVIS_EVENT_TYPE}" = "push" -a \
+         "${TRAVIS_REPO_SLUG}" = "apache/arrow" ]; then
+      archery docker push ${DOCKER_IMAGE_ID} || :
+    fi
