@@ -127,7 +127,7 @@ type DataType interface {
 	ID() Type
 	// Name is name of the data type.
 	Name() string
-	// Scalar
+	// BuildScalar from the value v using this DataType
 	BuildScalar(v interface{}) Scalar
 }
 

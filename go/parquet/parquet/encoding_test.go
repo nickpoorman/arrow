@@ -305,3 +305,14 @@ func TestDictionaryEncoding_BasicRoundTrip(t *testing.T) {
 		runner.Execute(10000, 1)
 	}
 }
+
+func TestDictionaryEncoding_CannotDictDecodeBoolean(t *testing.T) {
+	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
+	// defer pool.AssertSize(t, 0)
+	_, err := NewDictDecoder(BooleanType.typeNum(), nil, pool)
+	testutil.AssertNotNil(t, err)
+	testutil.AssertErrorIs(t, err, ParquetNYIException)
+}
+
+// ----------------------------------------------------------------------
+// Shared arrow builder decode tests

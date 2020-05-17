@@ -8,10 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	arrowCore "github.com/apache/arrow/go/arrow"
+	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/testutil"
-	"github.com/nickpoorman/arrow-parquet-go/parquet/arrow"
 )
 
 type unorderedSetInt64 map[int64]struct{}
@@ -369,7 +368,7 @@ func TestBinaryMemoTableBasics(t *testing.T) {
 	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	// defer pool.AssertSize(t, 0) // Whatever uses this data will release the memory?
 
-	table := NewBinaryMemoTable(pool, 0, -1, arrowCore.BinaryTypes.String)
+	table := NewBinaryMemoTable(pool, 0, -1, arrow.BinaryTypes.String)
 	testutil.AssertEqInt(t, int(table.Size()), 0)
 	AssertGet(t, table, a, kKeyNotFound)
 	AssertGetNull(t, table, kKeyNotFound)
@@ -488,147 +487,147 @@ func TestNewMemoTables(t *testing.T) {
 	binaryMemoTable := "*util.BinaryMemoTable"
 
 	cases := []struct {
-		dataType arrowCore.DataType
+		dataType arrow.DataType
 		want     string
 	}{
 		{
-			arrowCore.PrimitiveTypes.Int8,
+			arrow.PrimitiveTypes.Int8,
 			smallScalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Int16,
+			arrow.PrimitiveTypes.Int16,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Int32,
+			arrow.PrimitiveTypes.Int32,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Int64,
+			arrow.PrimitiveTypes.Int64,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Uint8,
+			arrow.PrimitiveTypes.Uint8,
 			smallScalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Uint16,
+			arrow.PrimitiveTypes.Uint16,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Uint32,
+			arrow.PrimitiveTypes.Uint32,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Uint64,
+			arrow.PrimitiveTypes.Uint64,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Float32,
+			arrow.PrimitiveTypes.Float32,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Float64,
+			arrow.PrimitiveTypes.Float64,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Date32,
+			arrow.PrimitiveTypes.Date32,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.PrimitiveTypes.Date64,
+			arrow.PrimitiveTypes.Date64,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.Null,
+			arrow.Null,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.BinaryTypes.Binary,
+			arrow.BinaryTypes.Binary,
 			binaryMemoTable,
 		},
 		{
-			arrowCore.BinaryTypes.String,
+			arrow.BinaryTypes.String,
 			binaryMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Boolean,
+			arrow.FixedWidthTypes.Boolean,
 			smallScalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Date32,
+			arrow.FixedWidthTypes.Date32,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Date64,
+			arrow.FixedWidthTypes.Date64,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.DayTimeInterval,
+			arrow.FixedWidthTypes.DayTimeInterval,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Duration_s,
+			arrow.FixedWidthTypes.Duration_s,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Duration_ms,
+			arrow.FixedWidthTypes.Duration_ms,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Duration_us,
+			arrow.FixedWidthTypes.Duration_us,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Duration_ns,
+			arrow.FixedWidthTypes.Duration_ns,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Float16,
+			arrow.FixedWidthTypes.Float16,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.MonthInterval,
+			arrow.FixedWidthTypes.MonthInterval,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Time32s,
+			arrow.FixedWidthTypes.Time32s,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Time32ms,
+			arrow.FixedWidthTypes.Time32ms,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Time64us,
+			arrow.FixedWidthTypes.Time64us,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Time64ns,
+			arrow.FixedWidthTypes.Time64ns,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Timestamp_s,
+			arrow.FixedWidthTypes.Timestamp_s,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Timestamp_ms,
+			arrow.FixedWidthTypes.Timestamp_ms,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Timestamp_us,
+			arrow.FixedWidthTypes.Timestamp_us,
 			scalarMemoTable,
 		},
 		{
-			arrowCore.FixedWidthTypes.Timestamp_ns,
+			arrow.FixedWidthTypes.Timestamp_ns,
 			scalarMemoTable,
 		},
 		{
-			(*arrowCore.ListType)(nil),
+			(*arrow.ListType)(nil),
 			scalarMemoTable,
 		},
 		{
-			(*arrowCore.StructType)(nil),
+			(*arrow.StructType)(nil),
 			scalarMemoTable,
 		},
 	}

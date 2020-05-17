@@ -7,7 +7,6 @@ import (
 	"reflect"
 
 	"github.com/apache/arrow/go/arrow/bitutil"
-	"github.com/nickpoorman/arrow-parquet-go/internal/bytearray"
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 	"github.com/nickpoorman/arrow-parquet-go/internal/util"
 	bitutilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util/bitutil"
@@ -67,9 +66,9 @@ import (
 type RleDecoder struct {
 	bitReader *bitutilext.BitReader
 	// Number of bits needed to encode the value. Must be between 0 and 64.
-	bitWidth int
-	// currentValue uint64
-	currentValue [8]byte
+	bitWidth     int
+	currentValue uint64
+	// currentValue []byte
 	repeatCount  int
 	literalCount int
 }
@@ -158,62 +157,12 @@ func (d *RleDecoder) Get(v interface{}) bool {
 	}
 }
 
-// // Gets a batch of values.  Returns the number of decoded elements.
-// func (d *RleDecoder) GetBatch(values interface{}, batchSize int) int {
-// 	debug.Assert(d.bitWidth >= 0, "Assert: d.bitWidth >= 0")
-// 	valuesRead := 0
-
-// 	out := reflect.ValueOf(values)
-// 	outOffset := 0
-
-// 	fmt.Printf("valuesRead: %d | batchSize: %d\n", valuesRead, batchSize)
-
-// 	for valuesRead < batchSize {
-// 		remaining := batchSize - valuesRead
-
-// 		fmt.Printf("remaining: %d | valuesRead-loop: %d | batchSize: %d\n", remaining, valuesRead, batchSize)
-// 		if d.repeatCount > 0 {
-// 			fmt.Printf("d.repeatCount > 0 | %d\n", d.repeatCount)
-
-// 			repeatBatch := util.MinInt(remaining, d.repeatCount)
-// 			fill(out, outOffset, repeatBatch, d.currentValue)
-
-// 			d.repeatCount -= repeatBatch
-// 			valuesRead += repeatBatch
-// 			outOffset += repeatBatch
-// 		} else if d.literalCount > 0 {
-// 			fmt.Printf("d.literalCount > 0 | %d\n", d.literalCount)
-// 			literalBatch := util.MinInt(remaining, d.literalCount)
-// 			actualRead := d.bitReader.GetBatch(
-// 				d.bitWidth,
-// 				sliceFromOffset(out, outOffset).Interface(),
-// 				literalBatch,
-// 			)
-// 			if actualRead != literalBatch {
-// 				return valuesRead
-// 			}
-
-// 			d.literalCount -= literalBatch
-// 			valuesRead += literalBatch
-// 			outOffset += literalBatch
-// 		} else {
-// 			fmt.Println("else NextCounts")
-// 			if !d.NextCounts() {
-// 				return valuesRead
-// 			}
-// 		}
-// 	}
-
-// 	return valuesRead
-// }
-
 // Gets a batch of values.  Returns the number of decoded elements.
-func (d *RleDecoder) GetBatch(buffer []byte, batchSize int) int {
+func (d *RleDecoder) GetBatch(values interface{}, batchSize int) int {
 	debug.Assert(d.bitWidth >= 0, "Assert: d.bitWidth >= 0")
 	valuesRead := 0
 
-	out := bytearray.NewByteArray(buffer, d.bitWidth/8)
-	// out := reflect.ValueOf(values) // buffer
+	out := reflect.ValueOf(values)
 	outOffset := 0
 
 	fmt.Printf("valuesRead: %d | batchSize: %d\n", valuesRead, batchSize)
@@ -226,7 +175,7 @@ func (d *RleDecoder) GetBatch(buffer []byte, batchSize int) int {
 			fmt.Printf("d.repeatCount > 0 | %d\n", d.repeatCount)
 
 			repeatBatch := util.MinInt(remaining, d.repeatCount)
-			out.FillBytes(outOffset, repeatBatch, d.currentValue[:])
+			fill(out, outOffset, repeatBatch, d.currentValue)
 
 			d.repeatCount -= repeatBatch
 			valuesRead += repeatBatch
