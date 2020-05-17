@@ -101,6 +101,15 @@ func (s BooleanScalar) ValueBytes() []byte {
 	return b
 }
 
+func (s BooleanScalar) PutValue(dst []byte) int {
+	BooleanTraits.PutValue(dst, s.value)
+	return 1
+}
+
+func (s BooleanScalar) ValueSize() int {
+	return 1
+}
+
 func (s BooleanScalar) DataType() DataType {
 	return s.dataType
 }
@@ -189,6 +198,15 @@ func (s Int8Scalar) ValueBytes() []byte {
 	b := make([]byte, 1)
 	Int8Traits.PutValue(b, s.value)
 	return b
+}
+
+func (s Int8Scalar) PutValue(dst []byte) int {
+	Int8Traits.PutValue(dst, s.value)
+	return 1
+}
+
+func (s Int8Scalar) ValueSize() int {
+	return 1
 }
 
 func (s Int8Scalar) DataType() DataType {
@@ -281,6 +299,15 @@ func (s Int16Scalar) ValueBytes() []byte {
 	return b
 }
 
+func (s Int16Scalar) PutValue(dst []byte) int {
+	Int16Traits.PutValue(dst, s.value)
+	return 2
+}
+
+func (s Int16Scalar) ValueSize() int {
+	return 2
+}
+
 func (s Int16Scalar) DataType() DataType {
 	return s.dataType
 }
@@ -371,6 +398,15 @@ func (s Int32Scalar) ValueBytes() []byte {
 	return b
 }
 
+func (s Int32Scalar) PutValue(dst []byte) int {
+	Int32Traits.PutValue(dst, s.value)
+	return 4
+}
+
+func (s Int32Scalar) ValueSize() int {
+	return 4
+}
+
 func (s Int32Scalar) DataType() DataType {
 	return s.dataType
 }
@@ -456,6 +492,15 @@ func (s Int64Scalar) ValueBytes() []byte {
 	b := make([]byte, 8)
 	Int64Traits.PutValue(b, s.value)
 	return b
+}
+
+func (s Int64Scalar) PutValue(dst []byte) int {
+	Int64Traits.PutValue(dst, s.value)
+	return 8
+}
+
+func (s Int64Scalar) ValueSize() int {
+	return 8
 }
 
 func (s Int64Scalar) DataType() DataType {
@@ -548,6 +593,15 @@ func (s Uint8Scalar) ValueBytes() []byte {
 	return b
 }
 
+func (s Uint8Scalar) PutValue(dst []byte) int {
+	Uint8Traits.PutValue(dst, s.value)
+	return 1
+}
+
+func (s Uint8Scalar) ValueSize() int {
+	return 1
+}
+
 func (s Uint8Scalar) DataType() DataType {
 	return s.dataType
 }
@@ -636,6 +690,15 @@ func (s Uint16Scalar) ValueBytes() []byte {
 	b := make([]byte, 2)
 	Uint16Traits.PutValue(b, s.value)
 	return b
+}
+
+func (s Uint16Scalar) PutValue(dst []byte) int {
+	Uint16Traits.PutValue(dst, s.value)
+	return 2
+}
+
+func (s Uint16Scalar) ValueSize() int {
+	return 2
 }
 
 func (s Uint16Scalar) DataType() DataType {
@@ -728,6 +791,15 @@ func (s Uint32Scalar) ValueBytes() []byte {
 	return b
 }
 
+func (s Uint32Scalar) PutValue(dst []byte) int {
+	Uint32Traits.PutValue(dst, s.value)
+	return 4
+}
+
+func (s Uint32Scalar) ValueSize() int {
+	return 4
+}
+
 func (s Uint32Scalar) DataType() DataType {
 	return s.dataType
 }
@@ -815,6 +887,15 @@ func (s Uint64Scalar) ValueBytes() []byte {
 	return b
 }
 
+func (s Uint64Scalar) PutValue(dst []byte) int {
+	Uint64Traits.PutValue(dst, s.value)
+	return 8
+}
+
+func (s Uint64Scalar) ValueSize() int {
+	return 8
+}
+
 func (s Uint64Scalar) DataType() DataType {
 	return s.dataType
 }
@@ -896,6 +977,15 @@ func (s Float16Scalar) ValueBytes() []byte {
 	b := make([]byte, 2)
 	Float16Traits.PutValue(b, s.value)
 	return b
+}
+
+func (s Float16Scalar) PutValue(dst []byte) int {
+	Float16Traits.PutValue(dst, s.value)
+	return 2
+}
+
+func (s Float16Scalar) ValueSize() int {
+	return 2
 }
 
 func (s Float16Scalar) DataType() DataType {
@@ -984,6 +1074,15 @@ func (s Float32Scalar) ValueBytes() []byte {
 	return b
 }
 
+func (s Float32Scalar) PutValue(dst []byte) int {
+	Float32Traits.PutValue(dst, s.value)
+	return 4
+}
+
+func (s Float32Scalar) ValueSize() int {
+	return 4
+}
+
 func (s Float32Scalar) DataType() DataType {
 	return s.dataType
 }
@@ -1068,6 +1167,15 @@ func (s Float64Scalar) ValueBytes() []byte {
 	b := make([]byte, 8)
 	Float64Traits.PutValue(b, s.value)
 	return b
+}
+
+func (s Float64Scalar) PutValue(dst []byte) int {
+	Float64Traits.PutValue(dst, s.value)
+	return 8
+}
+
+func (s Float64Scalar) ValueSize() int {
+	return 8
 }
 
 func (s Float64Scalar) DataType() DataType {
@@ -1157,6 +1265,14 @@ func (s BinaryScalar) ValueBytes() []byte {
 	return s.value.Bytes()
 }
 
+func (s BinaryScalar) PutValue(dst []byte) int {
+	return copy(dst, s.value.Bytes())
+}
+
+func (s BinaryScalar) ValueSize() int {
+	panic("not implemented")
+}
+
 func (s BinaryScalar) DataType() DataType {
 	return s.dataType
 }
@@ -1243,6 +1359,14 @@ func (s StringScalar) ValueBytes() []byte {
 	return s.value.Bytes()
 }
 
+func (s StringScalar) PutValue(dst []byte) int {
+	return copy(dst, s.value.Bytes())
+}
+
+func (s StringScalar) ValueSize() int {
+	panic("not implemented")
+}
+
 func (s StringScalar) DataType() DataType {
 	return s.dataType
 }
@@ -1327,6 +1451,14 @@ func (s LargeBinaryScalar) ValueBytes() []byte {
 	return s.value.Bytes()
 }
 
+func (s LargeBinaryScalar) PutValue(dst []byte) int {
+	return copy(dst, s.value.Bytes())
+}
+
+func (s LargeBinaryScalar) ValueSize() int {
+	panic("not implemented")
+}
+
 func (s LargeBinaryScalar) DataType() DataType {
 	return s.dataType
 }
@@ -1403,6 +1535,14 @@ func (s LargeStringScalar) Value() *memory.Buffer {
 
 func (s LargeStringScalar) ValueBytes() []byte {
 	return s.value.Bytes()
+}
+
+func (s LargeStringScalar) PutValue(dst []byte) int {
+	return copy(dst, s.value.Bytes())
+}
+
+func (s LargeStringScalar) ValueSize() int {
+	panic("not implemented")
 }
 
 func (s LargeStringScalar) DataType() DataType {
@@ -1487,6 +1627,14 @@ func (s FixedSizeBinaryScalar) Value() *memory.Buffer {
 
 func (s FixedSizeBinaryScalar) ValueBytes() []byte {
 	return s.value.Bytes()
+}
+
+func (s FixedSizeBinaryScalar) PutValue(dst []byte) int {
+	return copy(dst, s.value.Bytes())
+}
+
+func (s FixedSizeBinaryScalar) ValueSize() int {
+	panic("not implemented")
 }
 
 func (s FixedSizeBinaryScalar) DataType() DataType {
@@ -1579,6 +1727,15 @@ func (s Date32Scalar) ValueBytes() []byte {
 	return b
 }
 
+func (s Date32Scalar) PutValue(dst []byte) int {
+	Date32Traits.PutValue(dst, s.value)
+	return 4
+}
+
+func (s Date32Scalar) ValueSize() int {
+	return 4
+}
+
 func (s Date32Scalar) DataType() DataType {
 	return s.dataType
 }
@@ -1664,6 +1821,15 @@ func (s Date64Scalar) ValueBytes() []byte {
 	b := make([]byte, 8)
 	Date64Traits.PutValue(b, s.value)
 	return b
+}
+
+func (s Date64Scalar) PutValue(dst []byte) int {
+	Date64Traits.PutValue(dst, s.value)
+	return 8
+}
+
+func (s Date64Scalar) ValueSize() int {
+	return 8
 }
 
 func (s Date64Scalar) DataType() DataType {
@@ -1756,6 +1922,15 @@ func (s Time32Scalar) ValueBytes() []byte {
 	return b
 }
 
+func (s Time32Scalar) PutValue(dst []byte) int {
+	Time32Traits.PutValue(dst, s.value)
+	return 4
+}
+
+func (s Time32Scalar) ValueSize() int {
+	return 4
+}
+
 func (s Time32Scalar) DataType() DataType {
 	return s.dataType
 }
@@ -1843,6 +2018,15 @@ func (s Time64Scalar) ValueBytes() []byte {
 	return b
 }
 
+func (s Time64Scalar) PutValue(dst []byte) int {
+	Time64Traits.PutValue(dst, s.value)
+	return 8
+}
+
+func (s Time64Scalar) ValueSize() int {
+	return 8
+}
+
 func (s Time64Scalar) DataType() DataType {
 	return s.dataType
 }
@@ -1928,6 +2112,15 @@ func (s TimestampScalar) ValueBytes() []byte {
 	b := make([]byte, 8)
 	TimestampTraits.PutValue(b, s.value)
 	return b
+}
+
+func (s TimestampScalar) PutValue(dst []byte) int {
+	TimestampTraits.PutValue(dst, s.value)
+	return 8
+}
+
+func (s TimestampScalar) ValueSize() int {
+	return 8
 }
 
 func (s TimestampScalar) DataType() DataType {
@@ -2020,6 +2213,15 @@ func (s MonthIntervalScalar) ValueBytes() []byte {
 	return b
 }
 
+func (s MonthIntervalScalar) PutValue(dst []byte) int {
+	MonthIntervalTraits.PutValue(dst, s.value)
+	return 4
+}
+
+func (s MonthIntervalScalar) ValueSize() int {
+	return 4
+}
+
 func (s MonthIntervalScalar) DataType() DataType {
 	return s.dataType
 }
@@ -2101,6 +2303,15 @@ func (s DayTimeIntervalScalar) ValueBytes() []byte {
 	b := make([]byte, 8)
 	DayTimeIntervalTraits.PutValue(b, s.value)
 	return b
+}
+
+func (s DayTimeIntervalScalar) PutValue(dst []byte) int {
+	DayTimeIntervalTraits.PutValue(dst, s.value)
+	return 8
+}
+
+func (s DayTimeIntervalScalar) ValueSize() int {
+	return 8
 }
 
 func (s DayTimeIntervalScalar) DataType() DataType {
@@ -2190,6 +2401,15 @@ func (s DurationScalar) ValueBytes() []byte {
 	return b
 }
 
+func (s DurationScalar) PutValue(dst []byte) int {
+	DurationTraits.PutValue(dst, s.value)
+	return 8
+}
+
+func (s DurationScalar) ValueSize() int {
+	return 8
+}
+
 func (s DurationScalar) DataType() DataType {
 	return s.dataType
 }
@@ -2271,6 +2491,15 @@ func (s Decimal128Scalar) ValueBytes() []byte {
 	b := make([]byte, 16)
 	Decimal128Traits.PutValue(b, s.value)
 	return b
+}
+
+func (s Decimal128Scalar) PutValue(dst []byte) int {
+	Decimal128Traits.PutValue(dst, s.value)
+	return 16
+}
+
+func (s Decimal128Scalar) ValueSize() int {
+	return 16
 }
 
 func (s Decimal128Scalar) DataType() DataType {
@@ -2357,6 +2586,14 @@ func (s ListScalar) ValueBytes() []byte {
 	panic("not implemented")
 }
 
+func (s ListScalar) PutValue(dst []byte) int {
+	panic("not implemented")
+}
+
+func (s ListScalar) ValueSize() int {
+	panic("not implemented")
+}
+
 func (s ListScalar) DataType() DataType {
 	return s.dataType
 }
@@ -2437,6 +2674,14 @@ func (s LargeListScalar) Value() interface{} {
 }
 
 func (s LargeListScalar) ValueBytes() []byte {
+	panic("not implemented")
+}
+
+func (s LargeListScalar) PutValue(dst []byte) int {
+	panic("not implemented")
+}
+
+func (s LargeListScalar) ValueSize() int {
 	panic("not implemented")
 }
 
@@ -2523,6 +2768,14 @@ func (s MapScalar) ValueBytes() []byte {
 	panic("not implemented")
 }
 
+func (s MapScalar) PutValue(dst []byte) int {
+	panic("not implemented")
+}
+
+func (s MapScalar) ValueSize() int {
+	panic("not implemented")
+}
+
 func (s MapScalar) DataType() DataType {
 	return s.dataType
 }
@@ -2604,6 +2857,14 @@ func (s FixedSizeListScalar) Value() interface{} {
 }
 
 func (s FixedSizeListScalar) ValueBytes() []byte {
+	panic("not implemented")
+}
+
+func (s FixedSizeListScalar) PutValue(dst []byte) int {
+	panic("not implemented")
+}
+
+func (s FixedSizeListScalar) ValueSize() int {
 	panic("not implemented")
 }
 

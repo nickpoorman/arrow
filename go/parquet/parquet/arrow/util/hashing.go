@@ -391,21 +391,19 @@ func (*ScalarMemoTable) ComputeHash(value arrow.Scalar) (uint64, error) {
 // Copy values starting from index `start` into `outData`.
 // Check the size in debug mode.
 func (s *ScalarMemoTable) CopyValues(start int32, outSize int64, outData interface{}) {
-	switch v := outData.(type) {
-	case []arrow.Scalar:
-		s.copyValuesScalars(start, outSize, v)
-	default:
-		panic(fmt.Errorf("ScalarMemoTable.CopyValues() unsupported outData type: %T", outData))
-	}
-}
-
-// Copy values starting from index `start` into `outData`.
-// Check the size in debug mode.
-func (s *ScalarMemoTable) copyValuesScalars(start int32, outSize int64, outData []arrow.Scalar) {
+	byteOffset := 0
 	s.hashTable.VisitEntries(func(entry *HashTableEntry) {
 		index := entry.payload.(*scalarPayload).memoIndex - start
 		if index >= 0 {
-			outData[index] = entry.payload.(*scalarPayload).value
+			switch outTyped := outData.(type) {
+			case []byte:
+				scalar := entry.payload.(*scalarPayload).value
+				byteOffset += scalar.PutValue(outTyped[int(index)*scalar.ValueSize():])
+			case []arrow.Scalar:
+				outTyped[index] = entry.payload.(*scalarPayload).value
+			default:
+				panic(fmt.Errorf("ScalarMemoTable.CopyValues() unsupported outData type: %T", outData))
+			}
 		}
 	})
 }
@@ -535,9 +533,11 @@ func (s *SmallScalarMemoTable) Size() int32 {
 func (s *SmallScalarMemoTable) CopyValues(start int32, outSize int64, outData interface{}) {
 	debug.AssertGE(int(start), int(0))
 	debug.AssertLE(int(start), len(s.indexToValue))
-	switch v := outData.(type) {
+	switch outTyped := outData.(type) {
+	case []byte:
+		arrow.ScalarCopyValues(s.indexToValue[start:], outTyped)
 	case []arrow.Scalar:
-		copy(v, s.indexToValue[start:])
+		copy(outTyped, s.indexToValue[start:])
 	default:
 		panic(fmt.Errorf("SmallScalarMemoTable.CopyValues() unsupported outData type: %T", outData))
 	}

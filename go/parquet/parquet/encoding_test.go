@@ -162,7 +162,8 @@ func (t *testPlainEncodingInt64) CheckRoundtrip() {
 	t.t.Helper()
 
 	// TODO: Use a checked allocator here...
-	encoder, err := NewTypedEncoder(t.dtype, EncodingType_PLAIN, false, t.descr, memory.DefaultAllocator)
+	encoder, err := NewTypedEncoder(t.dtype, EncodingType_PLAIN, false,
+		t.descr, memory.DefaultAllocator, arrow.PrimitiveTypes.Int64)
 	testutil.AssertNil(t.t, err)
 
 	decoder, err := NewTypedDecoder(t.dtype, EncodingType_PLAIN, t.descr)
@@ -241,17 +242,19 @@ func (t *testDictionaryEncodingInt64) CheckRoundtrip() {
 	validBits := makeBytesWithInitValue(
 		int(bitutil.BytesForBits(int64(t.numValues))+1), 255)
 
-	baseEncoder, err := NewEncoder(Int64Type.typeNum(), EncodingType_PLAIN, true, t.descr, memory.DefaultAllocator)
+	baseEncoder, err := NewEncoder(Int64Type.typeNum(), EncodingType_PLAIN,
+		true, t.descr, t.allocator, arrow.PrimitiveTypes.Int64)
 	testutil.AssertNil(t.t, err)
 	encoder := baseEncoder.(*Int64DictEncoder)
 	dictTraits := encoder
 
 	testutil.AssertNil(t.t, encoder.PutBuffer(t.draws, t.numValues))
-	t.dictBuffer = AllocateBuffer(memory.DefaultAllocator, dictTraits.DictEncodedSize())
+	t.dictBuffer = AllocateBuffer(t.allocator, dictTraits.DictEncodedSize())
 	dictTraits.WriteDict(t.dictBuffer.Bytes())
 	indicies := encoder.FlushValues()
 
-	baseSpacedEncoder, err := NewEncoder(Int64Type.typeNum(), EncodingType_PLAIN, true, t.descr, memory.DefaultAllocator)
+	baseSpacedEncoder, err := NewEncoder(Int64Type.typeNum(), EncodingType_PLAIN,
+		true, t.descr, t.allocator, arrow.PrimitiveTypes.Int64)
 	testutil.AssertNil(t.t, err)
 	spacedEncoder := baseSpacedEncoder.(*Int64DictEncoder)
 
@@ -294,7 +297,7 @@ func VerifyResults(t *testing.T, result []int64, expected []int64, numValues int
 
 func TestDictionaryEncoding_BasicRoundTrip(t *testing.T) {
 	pool := memory.NewCheckedAllocator(memory.NewGoAllocator())
-	defer pool.AssertSize(t, 0)
+	// defer pool.AssertSize(t, 0)
 
 	for _, c := range DictEncodedTypes {
 		runner := newTestDictionaryEncodingInt64(t, c)

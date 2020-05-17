@@ -170,6 +170,25 @@ func (s {{.T}}Scalar) ValueBytes() []byte {
 	{{- end}}
 }
 
+func (s {{.T}}Scalar) PutValue(dst []byte) int {
+	{{- if .SizeBytes}}
+	{{.T}}Traits.PutValue(dst, s.value)
+	return {{.SizeBytes}}
+	{{- else if eq .CType "*memory.Buffer"}}
+	return copy(dst, s.value.Bytes())
+	{{- else}}
+	panic("not implemented")
+	{{- end}}
+}
+
+func (s {{.T}}Scalar) ValueSize() int {
+	{{- if .SizeBytes}}
+	return {{.SizeBytes}}
+	{{- else}}
+	panic("not implemented")
+	{{- end}}
+}
+
 func (s {{.T}}Scalar) DataType() DataType {
 	return s.dataType
 }

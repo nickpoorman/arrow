@@ -12,6 +12,9 @@ type Scalar interface {
 	ValueBytes() []byte
 	DataType() DataType
 	IsValid() bool
+	// PutValue writes the bytes for value to dst and returns the number of bytes written.
+	PutValue(dst []byte) int
+	ValueSize() int
 }
 
 type ScalarEqualityComparable interface {
@@ -112,6 +115,14 @@ func (s NullScalar) ValueBytes() []byte {
 	panic("not implemented")
 }
 
+func (s NullScalar) PutValue(dst []byte) int {
+	panic("not implemented")
+}
+
+func (s NullScalar) ValueSize() int {
+	panic("not implemented")
+}
+
 func (s NullScalar) DataType() DataType {
 	return s.dataType
 }
@@ -176,6 +187,14 @@ func (s StructScalar) ValueBytes() []byte {
 	panic("not implemented")
 }
 
+func (s StructScalar) PutValue(dst []byte) int {
+	panic("not implemented")
+}
+
+func (s StructScalar) ValueSize() int {
+	panic("not implemented")
+}
+
 func (s StructScalar) DataType() DataType {
 	return s.dataType
 }
@@ -227,6 +246,14 @@ func (s UnionScalar) NotEquals(other Scalar) bool {
 }
 
 func (s UnionScalar) ValueBytes() []byte {
+	panic("not implemented")
+}
+
+func (s UnionScalar) PutValue(dst []byte) int {
+	panic("not implemented")
+}
+
+func (s UnionScalar) ValueSize() int {
 	panic("not implemented")
 }
 
@@ -293,6 +320,14 @@ func (s DictionaryScalar) ValueBytes() []byte {
 	panic("not implemented")
 }
 
+func (s DictionaryScalar) PutValue(dst []byte) int {
+	panic("not implemented")
+}
+
+func (s DictionaryScalar) ValueSize() int {
+	panic("not implemented")
+}
+
 func (s DictionaryScalar) DataType() DataType {
 	return s.dataType
 }
@@ -342,6 +377,14 @@ func (s ExtensionScalar) NotEquals(other Scalar) bool {
 }
 
 func (s ExtensionScalar) ValueBytes() []byte {
+	panic("not implemented")
+}
+
+func (s ExtensionScalar) PutValue(dst []byte) int {
+	panic("not implemented")
+}
+
+func (s ExtensionScalar) ValueSize() int {
 	panic("not implemented")
 }
 
@@ -436,63 +479,14 @@ func ScalarIsNaN(s Scalar) bool {
 	}
 }
 
-// func NewScalar(value interface{}, dataType DataType) Scalar {
-// 	switch dataType.ID() {
-// 	case NULL:
-// 		return NewNullScalar(dataType)
-// 	case BOOL:
-// 		return NewBooleanScalarInterface(value, dataType)
-// 	case UINT8:
-// 		return NewUint8ScalarInterface(value, dataType)
-// 	case INT16:
-// 		return NewInt16ScalarInterface(value, dataType)
-// 	case UINT16:
-// 		return NewUint16ScalarInterface(value, dataType)
-// 	case INT32:
-// 		return NewInt32ScalarInterface(value, dataType)
-// 	case UINT32:
-// 		return NewUint32ScalarInterface(value, dataType)
-// 	case INT64:
-// 		return NewInt64ScalarInterface(value, dataType)
-// 	case UINT64:
-// 		return NewUint64ScalarInterface(value, dataType)
-// 	case FLOAT16:
-// 		return NewFloat16ScalarInterface(value, dataType)
-// 	case FLOAT32:
-// 		return NewFloat32ScalarInterface(value, dataType)
-// 	case FLOAT64:
-// 		return NewFloat64ScalarInterface(value, dataType)
-// 	case STRING:
-// 		return NewStringScalarInterface(value, dataType)
-// 	case BINARY:
-// 		return NewBinaryScalarInterface(value, dataType)
-// 	case FIXED_SIZE_BINARY:
-// 		return NewFixedSizeBinaryScalarInterface(value, dataType)
-// 	case DATE32:
-// 		return NewDate32ScalarInterface(value, dataType)
-// 	case DATE64:
-// 		return NewDate64ScalarInterface(value, dataType)
-// 	case TIMESTAMP:
-// 		return NewTimestampScalarInterface(value, dataType)
-// 	case TIME32:
-// 		return NewTime32ScalarInterface(value, dataType)
-// 	case TIME64:
-// 		return NewTime64ScalarInterface(value, dataType)
-// 	case INTERVAL:
-// 		return NewIntervalScalarInterface(value, dataType)
-// 	case DECIMAL:
-
-// 		return NewDecimalScalarInterface(value, dataType)
-// 	case LIST:
-// 	case STRUCT:
-// 	case UNION:
-// 	case DICTIONARY:
-// 	case MAP:
-// 	case EXTENSION:
-// 	case FIXED_SIZE_LIST:
-// 	case DURATION:
-// 	}
-// }
+// ScalarCopy copies the scalar values to dst and returns the bytes written
+func ScalarCopyValues(scalars []Scalar, dst []byte) int {
+	offset := 0
+	for _, scalar := range scalars {
+		offset += scalar.PutValue(dst[offset:])
+	}
+	return offset
+}
 
 var (
 	_ Scalar = (*NullScalar)(nil)
@@ -501,144 +495,3 @@ var (
 	_ Scalar = (*DictionaryScalar)(nil)
 	_ Scalar = (*ExtensionScalar)(nil)
 )
-
-// {
-// 	,
-// 	smallScalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Int16,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Int32,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Int64,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Uint8,
-// 	smallScalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Uint16,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Uint32,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Uint64,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Float32,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Float64,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Date32,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.PrimitiveTypes.Date64,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.Null,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.BinaryTypes.Binary,
-// 	binaryMemoTable,
-// },
-// {
-// 	arrowCore.BinaryTypes.String,
-// 	binaryMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Boolean,
-// 	smallScalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Date32,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Date64,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.DayTimeInterval,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Duration_s,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Duration_ms,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Duration_us,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Duration_ns,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Float16,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.MonthInterval,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Time32s,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Time32ms,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Time64us,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Time64ns,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Timestamp_s,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Timestamp_ms,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Timestamp_us,
-// 	scalarMemoTable,
-// },
-// {
-// 	arrowCore.FixedWidthTypes.Timestamp_ns,
-// 	scalarMemoTable,
-// },
-// {
-// 	(*arrowCore.ListType)(nil),
-// 	scalarMemoTable,
-// },
-// {
-// 	(*arrowCore.StructType)(nil),
-// 	scalarMemoTable,
-// },
