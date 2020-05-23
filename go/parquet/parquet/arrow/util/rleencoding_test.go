@@ -573,7 +573,7 @@ func TestRleDecoderGetBatchSpaced(t *testing.T) {
 		// {100, 100000, 0.05, 7},
 	}
 	for _, c := range int32Cases {
-		arr := rd.Int32(int(c.size) /*min=*/, 0, c.maxValue, c.nullProbability, mem)
+		arr := rd.Int32(int(c.size), 0 /*min=*/, c.maxValue, c.nullProbability, mem)
 		CheckRoundTripSpacedInt32(t, arr, c.bitWidth)
 		arr2 := array.NewSlice(arr, 1, int64(arr.Len())).(*array.Int32)
 		CheckRoundTripSpacedInt32(t, arr2, c.bitWidth)

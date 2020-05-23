@@ -781,8 +781,12 @@ func (d *Int64DictDecoder) DecodeValues(values []int64, numValues int) (int, err
 
 	decodedValues := d.idxDecoder.GetBatchWithDict(
 		// arrow.{{.DType}}Traits.CastFromBytes(d.dictionary.Bytes()),
-		arrow.Int64Traits.CastFromBytes(d.dictionary.Bytes()),
-		d.dictionaryLength, values, numValues)
+		// arrow.Int64Traits.CastFromBytes(d.dictionary.Bytes()),
+		d.dictionary.Bytes(),
+		d.dictionaryLength,
+		// values,
+		arrow.Int64Traits.CastToBytes(values),
+		numValues)
 
 	if decodedValues != numValues {
 		return 0, ParquetEofException
