@@ -3720,19 +3720,19 @@ func nullunpacker32(in []uint32, out []uint32) []uint32 {
 }
 
 func Unpack32(in []uint32, out []uint32, batchSize int, numBits int) int {
-	// fmt.Printf("Unpack32-first - batchSize: %d | newBatchSize: %d | numBits: %d | numLoops: %d | in: %#b | out: %#b\n", batchSize, -1, numBits, -1, in, out)
+	// debug.Print("Unpack32-first - batchSize: %d | newBatchSize: %d | numBits: %d | numLoops: %d | in: %#b | out: %#b\n", batchSize, -1, numBits, -1, in, out)
 
 	newBatchSize := batchSize / 32 * 32
 	numLoops := newBatchSize / 32
 
-	// fmt.Printf("Unpack32-second - batchSize: %d | newBatchSize: %d | numBits: %d | numLoops: %d | in: %#b | out: %#b\n", batchSize, newBatchSize, numBits, numLoops, in, out)
+	// debug.Print("Unpack32-second - batchSize: %d | newBatchSize: %d | numBits: %d | numLoops: %d | in: %#b | out: %#b\n", batchSize, newBatchSize, numBits, numLoops, in, out)
 
 	batchSize = newBatchSize
 	// if numLoops == 0 {
 	// 	numLoops = 1
 	// }
 
-	// fmt.Printf("Unpack32-third - batchSize: %d | newBatchSize: %d | numBits: %d | numLoops: %d | in: %#b | out: %#b\n", batchSize, newBatchSize, numBits, numLoops, in, out)
+	// debug.Print("Unpack32-third - batchSize: %d | newBatchSize: %d | numBits: %d | numLoops: %d | in: %#b | out: %#b\n", batchSize, newBatchSize, numBits, numLoops, in, out)
 
 	switch numBits {
 	case 0:

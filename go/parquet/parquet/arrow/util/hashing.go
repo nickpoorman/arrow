@@ -120,7 +120,7 @@ func (ht *hashTable) Upsize(newCapacity uint64) error {
 			if pSecond {
 				return fmt.Errorf("emply slot was not returned")
 			}
-			fmt.Printf("setting entry: %v\n", entry)
+			debug.Print("setting entry: %v\n", entry)
 			ht.entries()[pFirst] = entry
 		}
 	}

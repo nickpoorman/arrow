@@ -249,10 +249,10 @@ func getValue(numBits int, v bytearray.ByteArray, maxBytes int, buffer []byte,
 
 	// switch vT := v.(type) {
 	// case *bool:
-	// 	fmt.Printf("v is: %t\n", *vT)
+	// 	debug.Print("v is: %t\n", *vT)
 	// case *int32:
-	// 	// fmt.Printf("v is: %d\n", *vT)
-	// 	fmt.Printf("getValue-first - numBits: %d | v(num): %d | v: %#b | maxBytes: %d | buffer:$#b | bitOffset: %d | byteOffset: %d | bufferedValues: $#b\n",
+	// 	// debug.Print("v is: %d\n", *vT)
+	// 	debug.Print("getValue-first - numBits: %d | v(num): %d | v: %#b | maxBytes: %d | buffer:$#b | bitOffset: %d | byteOffset: %d | bufferedValues: $#b\n",
 	// 		numBits, *vT, *vT, maxBytes,
 	// 		// buffer,
 	// 		*bitOffset, *byteOffset,
@@ -280,14 +280,14 @@ func getValue(numBits int, v bytearray.ByteArray, maxBytes int, buffer []byte,
 
 	// switch vT := v.(type) {
 	// case *uint64:
-	// 	// fmt.Printf("v is: %d\n", *vT)
-	// 	fmt.Printf("getValue-second - numBits: %d | v(num): %d | v: %#b | maxBytes: %d | buffer: %#b | bitOffset: %d | byteOffset: %d | bufferedValues: %#b\n",
+	// 	// debug.Print("v is: %d\n", *vT)
+	// 	debug.Print("getValue-second - numBits: %d | v(num): %d | v: %#b | maxBytes: %d | buffer: %#b | bitOffset: %d | byteOffset: %d | bufferedValues: %#b\n",
 	// 		numBits, *vT, *vT, maxBytes, buffer, *bitOffset, *byteOffset, bufferedValues)
 	// }
 
 	*bitOffset += numBits
 	if *bitOffset >= 64 {
-		fmt.Printf("*bitOffset >= 64: %d\n", *bitOffset)
+		debug.Print("*bitOffset >= 64: %d\n", *bitOffset)
 		*byteOffset += 8
 		*bitOffset -= 64
 
@@ -322,9 +322,9 @@ func getValue(numBits int, v bytearray.ByteArray, maxBytes int, buffer []byte,
 		// // bo := reflect.ValueOf(v).Elem().Convert(reflect.TypeOf(uint64(0))).Uint() | b
 		// var buf2 [8]byte
 		// binary.LittleEndian.PutUint64(buf2[:], bo)
-		// // fmt.Printf("v was: %v\n", *v.(*int32))
+		// // debug.Print("v was: %v\n", *v.(*int32))
 		// readFromBuffer(buf2[:], binary.LittleEndian, v)
-		// // fmt.Printf("v is now: %v\n", *v.(*int32))
+		// // debug.Print("v is now: %v\n", *v.(*int32))
 		v.Copy(bytearray.FromUint64(v.Uint64() | b).Bytes())
 
 		debug.Assert(*bitOffset <= 64, "Assert: *bitOffset <= 64")
@@ -332,8 +332,8 @@ func getValue(numBits int, v bytearray.ByteArray, maxBytes int, buffer []byte,
 
 	// switch vT := v.(type) {
 	// case *uint64:
-	// 	// fmt.Printf("v is: %d\n", *vT)
-	// 	fmt.Printf("getValue-third - numBits: %d | v(num): %d | v: %#b | maxBytes: %d | buffer: %#b | bitOffset: %d | byteOffset: %d | bufferedValues: %#b\n",
+	// 	// debug.Print("v is: %d\n", *vT)
+	// 	debug.Print("getValue-third - numBits: %d | v(num): %d | v: %#b | maxBytes: %d | buffer: %#b | bitOffset: %d | byteOffset: %d | bufferedValues: %#b\n",
 	// 		numBits, *vT, *vT, maxBytes, buffer, *bitOffset, *byteOffset, bufferedValues)
 	// }
 }
@@ -431,7 +431,7 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 // 	debug.Assert(numBits <= 32, "numBits must be less than or equal to 32")
 // 	debug.Assert(numBits <= binary.Size(v)*8, "numBits must be less than or queal to the size of v")
 
-// 	fmt.Printf("GetBatch-frist - numBits: %d | batchSize: %d\n", numBits, batchSize)
+// 	debug.Print("GetBatch-frist - numBits: %d | batchSize: %d\n", numBits, batchSize)
 
 // 	bitOffset := b.bitOffset
 // 	byteOffset := b.byteOffset
@@ -446,11 +446,11 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 // 		batchSize = remainingBits / numBits
 // 	}
 
-// 	// fmt.Printf("GetBatch-second - numBits: %d | batchSize: %d | bitOffset: %d | byteOffset: %d | bufferedValues: %#b | maxBytes: %d | buffer: %#b | neededBits: %d | remainingBits: %d\n",
+// 	// debug.Print("GetBatch-second - numBits: %d | batchSize: %d | bitOffset: %d | byteOffset: %d | bufferedValues: %#b | maxBytes: %d | buffer: %#b | neededBits: %d | remainingBits: %d\n",
 // 	// 	numBits, batchSize, bitOffset, byteOffset, bufferedValues, maxBytes, buffer, neededBits, remainingBits)
 
 // 	vSlice := reflect.ValueOf(v)
-// 	fmt.Printf("vSlice kind: %v | type.kind: %v | indirect: %v\n", vSlice.Kind(), vSlice.Type().Kind(), reflect.Indirect(vSlice).Kind())
+// 	debug.Print("vSlice kind: %v | type.kind: %v | indirect: %v\n", vSlice.Kind(), vSlice.Type().Kind(), reflect.Indirect(vSlice).Kind())
 
 // 	// TODO: Remove
 // 	// var vUint64 []uint64
@@ -468,17 +468,17 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 
 // 	i := 0
 // 	if bitOffset != 0 {
-// 		fmt.Println("bitOffset != 0")
+// 		debug.Print("bitOffset != 0")
 // 		for ; i < batchSize && bitOffset != 0; i++ {
-// 			fmt.Printf("bitOffset != 0 .... getValue - i: %d | batchSize: %d | bitOffset: %d | \n", i, batchSize, bitOffset)
+// 			debug.Print("bitOffset != 0 .... getValue - i: %d | batchSize: %d | bitOffset: %d | \n", i, batchSize, bitOffset)
 // 			getValue(numBits, vSlice.Index(i).Addr().Interface(), maxBytes, buffer, &bitOffset, &byteOffset, bufferedValues)
-// 			// fmt.Printf("v is now: %#b\n", v.([]uint64)[i])
+// 			// debug.Print("v is now: %#b\n", v.([]uint64)[i])
 // 		}
 // 	}
 
 // 	switch vT := v.(type) {
 // 	case []int32: // sizeof(T) == 4
-// 		fmt.Println("In int32")
+// 		debug.Print("In int32")
 // 		numUnpacked := bpacking.Unpack32(
 // 			arrow.Uint32Traits.CastFromBytes(buffer[byteOffset:]),
 // 			arrow.Uint32Traits.CastFromBytes(arrow.Int32Traits.CastToBytes(vT))[i:],
@@ -486,7 +486,7 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 // 		i += numUnpacked
 // 		byteOffset += numUnpacked * numBits / 8
 // 	case []uint32: // sizeof(T) == 4
-// 		fmt.Println("In uint32")
+// 		debug.Print("In uint32")
 // 		numUnpacked := bpacking.Unpack32(
 // 			arrow.Uint32Traits.CastFromBytes(buffer[byteOffset:]),
 // 			arrow.Uint32Traits.CastFromBytes(arrow.Uint32Traits.CastToBytes(vT))[i:],
@@ -494,7 +494,7 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 // 		i += numUnpacked
 // 		byteOffset += numUnpacked * numBits / 8
 // 	case []float32: // sizeof(T) == 4
-// 		fmt.Println("In float32")
+// 		debug.Print("In float32")
 // 		numUnpacked := bpacking.Unpack32(
 // 			arrow.Uint32Traits.CastFromBytes(buffer[byteOffset:]),
 // 			arrow.Uint32Traits.CastFromBytes(arrow.Float32Traits.CastToBytes(vT))[i:],
@@ -502,7 +502,7 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 // 		i += numUnpacked
 // 		byteOffset += numUnpacked * numBits / 8
 // 	default:
-// 		fmt.Printf("In default. i: %d | batchSize: %d\n", i, batchSize)
+// 		debug.Print("In default. i: %d | batchSize: %d\n", i, batchSize)
 // 		const bufferSize int = 1024
 // 		var unpackBuffer [bufferSize]uint32
 // 		for i < batchSize {
@@ -514,7 +514,7 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 // 				arrow.Uint32Traits.CastFromBytes(buffer[byteOffset:]),
 // 				unpackBuffer[:], unpackSize, numBits,
 // 			)
-// 			fmt.Println("numUnpacked: ", numUnpacked)
+// 			debug.Print("numUnpacked: ", numUnpacked)
 // 			if numUnpacked == 0 {
 // 				break
 // 			}
@@ -536,7 +536,7 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 // 	}
 
 // 	bytesRemaining := maxBytes - byteOffset
-// 	fmt.Printf("maxBytes: %d | byteOffset: %d | bytesRemaining: %d\n", maxBytes, byteOffset, bytesRemaining)
+// 	debug.Print("maxBytes: %d | byteOffset: %d | bytesRemaining: %d\n", maxBytes, byteOffset, bytesRemaining)
 // 	if bytesRemaining >= 8 {
 // 		copy(bufferedValues, buffer[byteOffset:byteOffset+8])
 // 	} else {
@@ -544,7 +544,7 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 // 	}
 
 // 	for ; i < batchSize; i++ {
-// 		// fmt.Printf("lastloop - i: %d | batchSize: %d\n", i, batchSize)
+// 		// debug.Print("lastloop - i: %d | batchSize: %d\n", i, batchSize)
 // 		value := vSlice.Index(i).Addr().Interface()
 // 		// if vSlice.Kind() == reflect.Ptr
 // 		getValue(numBits, value,
@@ -555,7 +555,7 @@ func (b *BitReader) GetValue(numBits int, v bytearray.ByteArray) bool {
 // 	b.byteOffset = byteOffset
 // 	b.bufferedValues = bufferedValues
 
-// 	fmt.Printf("GetBatch-returning - bitOffset: %d | byteOffset: %d | bufferedValues: %#b\n", b.bitOffset, b.byteOffset, b.bufferedValues)
+// 	debug.Print("GetBatch-returning - bitOffset: %d | byteOffset: %d | bufferedValues: %#b\n", b.bitOffset, b.byteOffset, b.bufferedValues)
 
 // 	return batchSize
 // }
@@ -565,9 +565,10 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 	debug.Assert(b.buffer != nil, "buffer must not be nil")
 	// TODO: revisit this limit if necessary
 	debug.Assert(numBits <= 32, "numBits must be less than or equal to 32")
-	debug.Assert(numBits <= binary.Size(v)*8, "numBits must be less than or queal to the size of v")
+	// debug.Assert(numBits <= binary.Size(v)*8, "numBits must be less than or queal to the size of v")
+	debug.Assert(numBits <= v.BytesSize()*8, "numBits must be less than or queal to the size of v")
 
-	fmt.Printf("GetBatch-frist - numBits: %d | batchSize: %d\n", numBits, batchSize)
+	debug.Print("GetBatch-frist - numBits: %d | batchSize: %d\n", numBits, batchSize)
 
 	bitOffset := b.bitOffset
 	byteOffset := b.byteOffset
@@ -582,11 +583,11 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 		batchSize = remainingBits / numBits
 	}
 
-	// fmt.Printf("GetBatch-second - numBits: %d | batchSize: %d | bitOffset: %d | byteOffset: %d | bufferedValues: %#b | maxBytes: %d | buffer: %#b | neededBits: %d | remainingBits: %d\n",
+	// debug.Print("GetBatch-second - numBits: %d | batchSize: %d | bitOffset: %d | byteOffset: %d | bufferedValues: %#b | maxBytes: %d | buffer: %#b | neededBits: %d | remainingBits: %d\n",
 	// 	numBits, batchSize, bitOffset, byteOffset, bufferedValues, maxBytes, buffer, neededBits, remainingBits)
 
 	// vSlice := reflect.ValueOf(v)
-	// fmt.Printf("vSlice kind: %v | type.kind: %v | indirect: %v\n", vSlice.Kind(), vSlice.Type().Kind(), reflect.Indirect(vSlice).Kind())
+	// debug.Print("vSlice kind: %v | type.kind: %v | indirect: %v\n", vSlice.Kind(), vSlice.Type().Kind(), reflect.Indirect(vSlice).Kind())
 
 	// TODO: Remove
 	// var vUint64 []uint64
@@ -604,18 +605,18 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 
 	i := 0
 	if bitOffset != 0 {
-		fmt.Println("bitOffset != 0")
+		debug.Print("bitOffset != 0")
 		for ; i < batchSize && bitOffset != 0; i++ {
-			fmt.Printf("bitOffset != 0 .... getValue - i: %d | batchSize: %d | bitOffset: %d | \n", i, batchSize, bitOffset)
+			debug.Print("bitOffset != 0 .... getValue - i: %d | batchSize: %d | bitOffset: %d | \n", i, batchSize, bitOffset)
 			// getValue(numBits, vSlice.Index(i).Addr().Interface(), maxBytes, buffer, &bitOffset, &byteOffset, bufferedValues)
-			getValue(numBits, v.At(i), maxBytes, buffer, &bitOffset, &byteOffset, bufferedValues)
-			// fmt.Printf("v is now: %#b\n", v.([]uint64)[i])
+			getValue(numBits, v.ElementAt(i), maxBytes, buffer, &bitOffset, &byteOffset, bufferedValues)
+			// debug.Print("v is now: %#b\n", v.([]uint64)[i])
 		}
 	}
 
 	// switch vT := v.(type) {
 	// case []int32: // sizeof(T) == 4
-	// 	fmt.Println("In int32")
+	// 	debug.Print("In int32")
 	// 	numUnpacked := bpacking.Unpack32(
 	// 		arrow.Uint32Traits.CastFromBytes(buffer[byteOffset:]),
 	// 		arrow.Uint32Traits.CastFromBytes(arrow.Int32Traits.CastToBytes(vT))[i:],
@@ -623,7 +624,7 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 	// 	i += numUnpacked
 	// 	byteOffset += numUnpacked * numBits / 8
 	// case []uint32: // sizeof(T) == 4
-	// 	fmt.Println("In uint32")
+	// 	debug.Print("In uint32")
 	// 	numUnpacked := bpacking.Unpack32(
 	// 		arrow.Uint32Traits.CastFromBytes(buffer[byteOffset:]),
 	// 		arrow.Uint32Traits.CastFromBytes(arrow.Uint32Traits.CastToBytes(vT))[i:],
@@ -631,7 +632,7 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 	// 	i += numUnpacked
 	// 	byteOffset += numUnpacked * numBits / 8
 	// case []float32: // sizeof(T) == 4
-	// 	fmt.Println("In float32")
+	// 	debug.Print("In float32")
 	// 	numUnpacked := bpacking.Unpack32(
 	// 		arrow.Uint32Traits.CastFromBytes(buffer[byteOffset:]),
 	// 		arrow.Uint32Traits.CastFromBytes(arrow.Float32Traits.CastToBytes(vT))[i:],
@@ -639,9 +640,10 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 	// 	i += numUnpacked
 	// 	byteOffset += numUnpacked * numBits / 8
 	// default:
-	fmt.Printf("In default. i: %d | batchSize: %d\n", i, batchSize)
+	debug.Print("In default. i: %d | batchSize: %d\n", i, batchSize)
 	const bufferSize int = 1024
 	var unpackBuffer [bufferSize]uint32
+	isBool := v.ElementSize() == 1
 	for i < batchSize {
 		unpackSize := batchSize - i
 		if bufferSize < unpackSize {
@@ -651,30 +653,44 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 			arrow.Uint32Traits.CastFromBytes(buffer[byteOffset:]),
 			unpackBuffer[:], unpackSize, numBits,
 		)
-		fmt.Println("numUnpacked: ", numUnpacked)
+		debug.Print("numUnpacked: ", numUnpacked)
 		if numUnpacked == 0 {
 			break
 		}
-		for k := 0; k < numUnpacked; k++ {
-			// v[i+k] = unpackBuffer[k]
-			// switch vT := v.(type) {
-			// case []bool:
-			// 	vT[i+k] = unpackBuffer[k] != 0
-			// default:
-			// 	e := vSlice.Index(i + k)
-			// 	e.Set(
-			// 		reflect.ValueOf(unpackBuffer[k]).Convert(e.Type()),
-			// 	)
-			// }
-			v.At(i+k).PutUint32At(0, unpackBuffer[k])
+
+		// v[i+k] = unpackBuffer[k]
+		// switch vT := v.(type) {
+		// case []bool:
+		// 	vT[i+k] = unpackBuffer[k] != 0
+		// default:
+		// 	e := vSlice.Index(i + k)
+		// 	e.Set(
+		// 		reflect.ValueOf(unpackBuffer[k]).Convert(e.Type()),
+		// 	)
+		// }
+
+		if isBool {
+			for k := 0; k < numUnpacked; k++ {
+				v.ElementAt(i + k).PutBool(unpackBuffer[k] != 0)
+			}
+		} else {
+			for k := 0; k < numUnpacked; k++ {
+				v.ElementAt(i + k).PutUint32(unpackBuffer[k])
+			}
 		}
+
+		// TODO: We may be able to optimize by working with bytes directly
+		// v.ElementsSlice(i).Copy(
+		// 	arrow.Uint32Traits.CastToBytes(unpackBuffer[:numUnpacked]),
+		// )
+
 		i += numUnpacked
 		byteOffset += numUnpacked * numBits / 8
 	}
 	// }
 
 	bytesRemaining := maxBytes - byteOffset
-	fmt.Printf("maxBytes: %d | byteOffset: %d | bytesRemaining: %d\n", maxBytes, byteOffset, bytesRemaining)
+	debug.Print("maxBytes: %d | byteOffset: %d | bytesRemaining: %d\n", maxBytes, byteOffset, bytesRemaining)
 	if bytesRemaining >= 8 {
 		copy(bufferedValues, buffer[byteOffset:byteOffset+8])
 	} else {
@@ -682,12 +698,12 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 	}
 
 	for ; i < batchSize; i++ {
-		// fmt.Printf("lastloop - i: %d | batchSize: %d\n", i, batchSize)
+		// debug.Print("lastloop - i: %d | batchSize: %d\n", i, batchSize)
 		// value := vSlice.Index(i).Addr().Interface()
 
 		// if vSlice.Kind() == reflect.Ptr
 		// getValue(numBits, value,
-		getValue(numBits, v.At(i),
+		getValue(numBits, v.ElementAt(i),
 			maxBytes, buffer, &bitOffset, &byteOffset, bufferedValues)
 	}
 
@@ -695,7 +711,7 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 	b.byteOffset = byteOffset
 	b.bufferedValues = bufferedValues
 
-	fmt.Printf("GetBatch-returning - bitOffset: %d | byteOffset: %d | bufferedValues: %#b\n", b.bitOffset, b.byteOffset, b.bufferedValues)
+	debug.Print("GetBatch-returning - bitOffset: %d | byteOffset: %d | bufferedValues: %#b\n", b.bitOffset, b.byteOffset, b.bufferedValues)
 
 	return batchSize
 }
@@ -710,13 +726,13 @@ func (b *BitReader) GetAligned(numBytes int, v interface{}) bool {
 	// TODO: If v is a single byte there might be a faster path we can implement
 
 	if numBytes > binary.Size(v) {
-		fmt.Printf("numBytes > binary.Size(v): numBytes: %d | Size(v): %d\n", numBytes, binary.Size(v))
+		debug.Print("numBytes > binary.Size(v): numBytes: %d | Size(v): %d\n", numBytes, binary.Size(v))
 		return false
 	}
-	fmt.Printf("GetAligned - numBytes: %d | v: %T\n", numBytes, v)
+	debug.Print("GetAligned - numBytes: %d | v: %T\n", numBytes, v)
 	bytesRead := int(bitutil.BytesForBits(int64(b.bitOffset)))
 	if b.byteOffset+bytesRead+numBytes > b.maxBytes {
-		fmt.Printf(
+		debug.Print(
 			"b.byteOffset+bytesRead+numBytes > b.maxBytes - filled buffer, returning "+
 				"b.byteOffset: %d | bytesRead: %d | numBytes: %d | b.maxBytes: %d\n",
 			b.byteOffset, bytesRead, numBytes, b.maxBytes)
@@ -745,7 +761,7 @@ func (b *BitReader) GetAligned(numBytes int, v interface{}) bool {
 
 	// Advance byte_offset to next unread byte and read num_bytes
 	b.byteOffset += bytesRead
-	fmt.Printf("byteOffset: %d | end: %d\n", b.byteOffset, b.byteOffset+numBytes)
+	debug.Print("byteOffset: %d | end: %d\n", b.byteOffset, b.byteOffset+numBytes)
 
 	readFromBuffer(b.buffer[b.byteOffset:b.byteOffset+numBytes], binary.LittleEndian, v)
 
@@ -768,7 +784,7 @@ func (b *BitReader) GetAligned(numBytes int, v interface{}) bool {
 // the beginning of a byte. Return false if there were not enough bytes in
 // the buffer.
 func (b *BitReader) GetVlqInt() (uint32, bool) {
-	fmt.Println("called GetVlqInt")
+	debug.Print("called GetVlqInt")
 	var tmp uint32 = 0
 	for i := 0; i < KMaxVlqByteLength; i++ {
 		var bite byte
@@ -838,7 +854,7 @@ func writeToBuffer(bs []byte, order binary.ByteOrder, data interface{}) {
 }
 
 func readFromBuffer(bs []byte, order binary.ByteOrder, data interface{}) {
-	// fmt.Printf("readFromBuffer-first - bs: %#b - len: %d | dataT: %T\n", bs, len(bs), data)
+	// debug.Print("readFromBuffer-first - bs: %#b - len: %d | dataT: %T\n", bs, len(bs), data)
 	if len(bs) == 0 {
 		// There's nothing in the buffer to read
 		return
@@ -855,7 +871,7 @@ func readFromBuffer(bs []byte, order binary.ByteOrder, data interface{}) {
 	case *uint16:
 		*data = order.Uint16(bs)
 	case *int32:
-		// fmt.Printf("readFromBuffer-second - bs: %#b | data: %d\n", bs, *data)
+		// debug.Print("readFromBuffer-second - bs: %#b | data: %d\n", bs, *data)
 		*data = int32(order.Uint32(bs))
 	case *uint32:
 		*data = order.Uint32(bs)
@@ -864,7 +880,7 @@ func readFromBuffer(bs []byte, order binary.ByteOrder, data interface{}) {
 	case *int: // assuming int is an int64
 		*data = int(order.Uint64(bs))
 	case *uint64:
-		// fmt.Printf("readFromBuffer-second - bs: %#b | data: %#b\n", bs, *data)
+		// debug.Print("readFromBuffer-second - bs: %#b | data: %#b\n", bs, *data)
 		*data = order.Uint64(bs)
 	case *float32:
 		*data = math.Float32frombits(order.Uint32(bs))
@@ -881,9 +897,9 @@ func readFromBuffer(bs []byte, order binary.ByteOrder, data interface{}) {
 	case []uint8:
 		copy(data, bs)
 	case [8]uint8: // added for hardcoded buffers
-		// fmt.Printf("data before: %#b\n", data)
+		// debug.Print("data before: %#b\n", data)
 		copy(data[:], bs)
-		// fmt.Printf("data after: %#b\n", data)
+		// debug.Print("data after: %#b\n", data)
 	case []int16:
 		for i := range data {
 			data[i] = int16(order.Uint16(bs[2*i:]))

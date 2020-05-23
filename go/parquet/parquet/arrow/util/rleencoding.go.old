@@ -100,41 +100,41 @@ func (d *RleDecoder) NextCounts() bool {
 	// The int is encoded as a vlq-encoded value.
 	indicatorValue, result := d.bitReader.GetVlqInt()
 	if !result {
-		fmt.Println("NextCounts - no result")
+		debug.Print("NextCounts - no result")
 		return false
 	}
-	fmt.Printf("NextCounts - indicatorValue: %d\n", indicatorValue)
+	debug.Print("NextCounts - indicatorValue: %d\n", indicatorValue)
 
 	// lsb indicates if it is a literal run or repeated run
 	isLiteral := (indicatorValue & 1) != 0
 	count := indicatorValue >> 1
-	fmt.Printf("NextCounts -- isLiteral: %t\n", isLiteral)
+	debug.Print("NextCounts -- isLiteral: %t\n", isLiteral)
 	if isLiteral {
 		if count == 0 || count > uint32(math.MaxInt32/8) {
 			return false
 		}
 		d.literalCount = int(count * 8)
-		fmt.Printf("NextCounts - d.literalCount: %d\n", d.literalCount)
+		debug.Print("NextCounts - d.literalCount: %d\n", d.literalCount)
 	} else {
 		if count == 0 || count > uint32(math.MaxInt32) {
 			return false
 		}
 		d.repeatCount = int(count)
-		fmt.Printf("NextCounts - d.repeatCount: %d\n", d.repeatCount)
+		debug.Print("NextCounts - d.repeatCount: %d\n", d.repeatCount)
 		// XXX (ARROW-4018) this is not big-endian compatible
 		var buffer [8]byte
 		binary.LittleEndian.PutUint64(buffer[:], d.currentValue)
-		fmt.Printf("buffer was: %#b\n", buffer)
+		debug.Print("buffer was: %#b\n", buffer)
 		result := d.bitReader.GetAligned(
 			int(bitutilext.CeilDiv(int64(d.bitWidth), 8)),
 			buffer[:])
 		if !result {
-			fmt.Println("no result")
+			debug.Print("no result")
 			return false
 		}
-		fmt.Printf("buffer is now: %#b\n", buffer)
+		debug.Print("buffer is now: %#b\n", buffer)
 		d.currentValue = binary.LittleEndian.Uint64(buffer[:])
-		fmt.Printf("Set d.currentValue = %d\n", d.currentValue)
+		debug.Print("Set d.currentValue = %d\n", d.currentValue)
 	}
 	return true
 }
@@ -165,14 +165,14 @@ func (d *RleDecoder) GetBatch(values interface{}, batchSize int) int {
 	out := reflect.ValueOf(values)
 	outOffset := 0
 
-	fmt.Printf("valuesRead: %d | batchSize: %d\n", valuesRead, batchSize)
+	debug.Print("valuesRead: %d | batchSize: %d\n", valuesRead, batchSize)
 
 	for valuesRead < batchSize {
 		remaining := batchSize - valuesRead
 
-		fmt.Printf("remaining: %d | valuesRead-loop: %d | batchSize: %d\n", remaining, valuesRead, batchSize)
+		debug.Print("remaining: %d | valuesRead-loop: %d | batchSize: %d\n", remaining, valuesRead, batchSize)
 		if d.repeatCount > 0 {
-			fmt.Printf("d.repeatCount > 0 | %d\n", d.repeatCount)
+			debug.Print("d.repeatCount > 0 | %d\n", d.repeatCount)
 
 			repeatBatch := util.MinInt(remaining, d.repeatCount)
 			fill(out, outOffset, repeatBatch, d.currentValue)
@@ -181,7 +181,7 @@ func (d *RleDecoder) GetBatch(values interface{}, batchSize int) int {
 			valuesRead += repeatBatch
 			outOffset += repeatBatch
 		} else if d.literalCount > 0 {
-			fmt.Printf("d.literalCount > 0 | %d\n", d.literalCount)
+			debug.Print("d.literalCount > 0 | %d\n", d.literalCount)
 			literalBatch := util.MinInt(remaining, d.literalCount)
 			actualRead := d.bitReader.GetBatch(
 				d.bitWidth,
@@ -196,7 +196,7 @@ func (d *RleDecoder) GetBatch(values interface{}, batchSize int) int {
 			valuesRead += literalBatch
 			outOffset += literalBatch
 		} else {
-			fmt.Println("else NextCounts")
+			debug.Print("else NextCounts")
 			if !d.NextCounts() {
 				return valuesRead
 			}
@@ -225,7 +225,7 @@ func sliceFromOffset(slice reflect.Value, offset int) reflect.Value {
 func (d *RleDecoder) GetBatchSpaced(batchSize int, nullCount int, validBits []byte,
 	validBitsOffset int64, out interface{}) int {
 
-	fmt.Printf("Called GetBatchSpaced: %d | nullCount: %d | validBitsOffset: %d | validBits: %#b\n",
+	debug.Print("Called GetBatchSpaced: %d | nullCount: %d | validBitsOffset: %d | validBits: %#b\n",
 		batchSize, nullCount, validBitsOffset, validBits,
 	)
 	debug.Assert(d.bitWidth >= 0, "Assert: d.bitWidth >= 0")
@@ -678,7 +678,7 @@ func (e *RleEncoder) Put(value uint64) bool {
 // Flushes any pending values to the underlying buffer.
 // Returns the total number of bytes written
 func (e *RleEncoder) Flush() int {
-	// fmt.Println("called Flush")
+	// debug.Print("called Flush")
 	if e.literalCount > 0 || e.repeatCount > 0 || e.numBufferedValues > 0 {
 		allRepeat := e.literalCount == 0 && (e.repeatCount == e.numBufferedValues ||
 			e.numBufferedValues == 0)
@@ -766,7 +766,7 @@ func (e *RleEncoder) flushBufferedValues(done bool) {
 // Flushes literal values to the underlying buffer.  If update_indicator_byte,
 // then the current literal run is complete and the indicator byte is updated.
 func (e *RleEncoder) flushLiteralRun(update_indicator_byte bool) {
-	// fmt.Println("called flushLiteralRun")
+	// debug.Print("called flushLiteralRun")
 	if e.literalIndicatorByte == nil {
 		// The literal indicator byte has not been reserved yet, get one now.
 		e.literalIndicatorByte = e.bitWriter.GetNextBytePtr(1)
@@ -798,7 +798,7 @@ func (e *RleEncoder) flushLiteralRun(update_indicator_byte bool) {
 
 // Flushes a repeated run to the underlying buffer.
 func (e *RleEncoder) flushRepeatedRun() {
-	// fmt.Println("called flushRepeatedRun")
+	// debug.Print("called flushRepeatedRun")
 	debug.Assert(e.repeatCount > 0, "Assert: e.repeatCount > 0")
 	result := true
 	// The lsb of 0 indicates this is a repeated run
