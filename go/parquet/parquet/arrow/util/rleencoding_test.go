@@ -111,7 +111,7 @@ func BitArrayValuesTest(t *testing.T, bitWidth int, numValues int) {
 		var valBuf [8]byte
 		val := bytearray.NewByteArray(valBuf[:], 8)
 		result := reader.GetValue(bitWidth, val)
-		val.ToValue(&v)
+		val.ReadInto(&v)
 		testutil.AssertTrue(t, result)
 		testutil.AssertEqInt(t, int(v), int(int64(i)%mod))
 	}
@@ -146,14 +146,14 @@ func TestBitArrayTestMixed(t *testing.T) {
 			var valBuf [1]byte
 			val := bytearray.NewByteArray(valBuf[:], 1)
 			result = reader.GetValue(1, val)
-			val.ToValue(&v)
+			val.ReadInto(&v)
 			testutil.AssertDeepEq(t, v, parity)
 			parity = !parity
 		} else {
 			var v int
-			val := bytearray.Make(int(unsafe.Sizeof(v)), 1, 1)
+			val := bytearray.NewByteArray(make([]byte, intSize), intSize)
 			result = reader.GetValue(10, val)
-			val.ToValue(&v)
+			val.ReadInto(&v)
 			testutil.AssertEqInt(t, v, i)
 		}
 		testutil.AssertTrue(t, result)
@@ -201,7 +201,7 @@ func ValidateRle(t *testing.T, values []int, bitWidth int, expectedEncoding []by
 			var v uint64
 			var valBuf [8]byte
 			result := decoder.Get(valBuf[:])
-			bytearray.NewByteArray(valBuf[:], 8).ToValue(&v)
+			bytearray.NewByteArray(valBuf[:], 8).ReadInto(&v)
 			testutil.AssertTrue(t, result)
 			testutil.AssertEqInt(t, int(v), values[i])
 		}
@@ -210,10 +210,10 @@ func ValidateRle(t *testing.T, values []int, bitWidth int, expectedEncoding []by
 	// Verify batch read
 	{
 		decoder := NewRleDecoder(buffer, length, bitWidth)
-		valuesReadBA := bytearray.Make(intSize, len(values), len(values))
+		valuesReadBA := bytearray.NewByteArray(make([]byte, intSize*len(values)), intSize)
 		testutil.AssertEqInt(t, len(values), decoder.GetBatch(valuesReadBA.Bytes(), len(values)))
 		valuesRead := make([]int, len(values))
-		valuesReadBA.ToValue(valuesRead)
+		valuesReadBA.ReadInto(valuesRead)
 		testutil.AssertDeepEq(t, valuesRead, values)
 		// if !reflect.DeepEqual(valuesRead, values) {
 		// 	panic(fmt.Errorf("AssertDeepEq: got=%+v; want=%+v\n", valuesRead, values))
@@ -242,7 +242,7 @@ func CheckRoundTrip(t *testing.T, values []int, bitWidth int) bool {
 		decoder := NewRleDecoder(buffer, encodedLen, bitWidth)
 		for i := 0; i < len(values); i++ {
 			testutil.AssertTrue(t, decoder.Get(out[:]))
-			outBA.ToValue(&oV)
+			outBA.ReadInto(&oV)
 			if values[i] != oV {
 				return false
 			}
@@ -252,12 +252,12 @@ func CheckRoundTrip(t *testing.T, values []int, bitWidth int) bool {
 	// Verify batch read
 	{
 		decoder := NewRleDecoder(buffer, encodedLen, bitWidth)
-		valuesReadBA := bytearray.Make(intSize, len(values), len(values))
+		valuesReadBA := bytearray.NewByteArray(make([]byte, intSize*len(values)), intSize)
 		if len(values) != decoder.GetBatch(valuesReadBA.Bytes(), len(values)) {
 			return false
 		}
 		valuesRead := make([]int, len(values))
-		valuesReadBA.ToValue(valuesRead)
+		valuesReadBA.ReadInto(valuesRead)
 
 		if !reflect.DeepEqual(values, valuesRead) {
 			return false
@@ -568,7 +568,7 @@ func CheckRoundTripSpacedInt32(t *testing.T, data *array.Int32, bitWidth int) {
 	// Verify batch read
 	decoder := NewRleDecoder(buffer, encodedSize, bitWidth)
 	valuesRead := make([]int32, numValues)
-	valuesReadBa := bytearray.Make(4, numValues, numValues)
+	valuesReadBa := bytearray.NewByteArray(make([]byte, 4*numValues), numValues)
 
 	debug.Print("numValues: %+v", numValues)
 	testutil.AssertEqInt(t,
@@ -581,7 +581,7 @@ func CheckRoundTripSpacedInt32(t *testing.T, data *array.Int32, bitWidth int) {
 		),
 		numValues)
 
-	valuesReadBa.ToValue(valuesRead)
+	valuesReadBa.ReadInto(valuesRead)
 
 	for i := 0; i < numValues; i++ {
 		// debug.Print("Index %d | isValid: %t\n", i, data.IsValid(i))

@@ -91,17 +91,67 @@ func TestUint32(t *testing.T) {
 // 	}
 // }
 
-func TestElementsArrTest(t *testing.T) {
-	var currentValue [8]byte
-	binary.LittleEndian.PutUint64(currentValue[:], 1) // set current value to 1, i.e. true
+func BenchmarkElementsArrTest(b *testing.B) {
+	currentValue := make([]byte, 8)
+	binary.LittleEndian.PutUint64(currentValue, 1) // set current value to 1, i.e. true
 
 	// We need to be able to store 4 booleans in 4 byte of type int
-	b := make([]byte, 4)
-	boolBA := NewByteArray(b, 1)
-	boolBA.ElementsFillBytes(0, 4, currentValue[:])
-	want := []int{1, 1, 1, 1}
+	boolBA := NewByteArray(make([]byte, 4), 1)
+	boolBA.ElementsFillBytes(0, 4, currentValue)
 
-	got := make([]int, 4)
-	boolBA.ReadTo(got)
-	testutil.AssertDeepEq(t, got, want)
+	// want := []uint8{1, 1, 1, 1}
+	got := make([]uint8, 4)
+
+	for n := 0; n < b.N; n++ {
+		boolBA.ReadTo(got)
+		// testutil.AssertDeepEq(t, got, want)
+	}
+
+}
+
+func TestElementsArrTest(t *testing.T) {
+	{
+		currentValue := make([]byte, 8)
+		binary.LittleEndian.PutUint64(currentValue, 1) // set current value to 1, i.e. true
+
+		// We need to be able to store 4 booleans in 4 byte of type int
+		boolBA := NewByteArray(make([]byte, 4), 1)
+		boolBA.ElementsFillBytes(0, 4, currentValue)
+
+		want := []uint8{1, 1, 1, 1}
+		got := make([]uint8, 4)
+
+		boolBA.ReadTo(got)
+		testutil.AssertDeepEq(t, got, want)
+	}
+
+	{
+		currentValue := make([]byte, 8)
+		binary.LittleEndian.PutUint64(currentValue, 1) // set current value to 1, i.e. true
+
+		// We need to be able to store 4 booleans in 4 byte of type int
+		boolBA := NewByteArray(make([]byte, 4), 1)
+		boolBA.ElementsFillBytes(0, 4, currentValue)
+
+		want := []uint16{1, 1, 1, 1}
+		got := make([]uint16, 4)
+
+		boolBA.ReadTo(got)
+		testutil.AssertDeepEq(t, got, want)
+	}
+
+	{
+		currentValue := make([]byte, 1)
+		currentValue[0] = 1 // set current value to 1, i.e. true
+
+		// We need to be able to store 4 booleans in 4 byte of type int
+		boolBA := NewByteArray(make([]byte, 4), 1)
+		boolBA.ElementsFillBytes(0, 4, currentValue)
+
+		want := []uint16{1, 1, 1, 1}
+		got := make([]uint16, 4)
+
+		boolBA.ReadTo(got)
+		testutil.AssertDeepEq(t, got, want)
+	}
 }

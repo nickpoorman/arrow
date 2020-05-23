@@ -6,14 +6,18 @@ import (
 	"math"
 	"reflect"
 	"unsafe"
-
-	"github.com/apache/arrow/go/arrow/bitutil"
 )
 
+const boolSize = int(unsafe.Sizeof(bool(false)))
 const uint8Size = int(unsafe.Sizeof(uint8(0)))
 const uint16Size = int(unsafe.Sizeof(uint16(0)))
 const uint32Size = int(unsafe.Sizeof(uint32(0)))
 const uint64Size = int(unsafe.Sizeof(uint64(0)))
+const intSize = int(unsafe.Sizeof(int(0)))
+const int8Size = int(unsafe.Sizeof(int32(0)))
+const int16Size = int(unsafe.Sizeof(int32(0)))
+const int32Size = int(unsafe.Sizeof(int32(0)))
+const int64Size = int(unsafe.Sizeof(int64(0)))
 
 type ByteArray struct {
 	v     []byte
@@ -61,7 +65,7 @@ func (b ByteArray) ElementsCapacity() int {
 // }
 
 // first and last are the places value will be placed [first,last)
-func (b ByteArray) ElementsFillBytes(first, last int, value uint64) {
+func (b ByteArray) ElementsFillBytes(first, last int, value []byte) {
 	// debug.Assert(len(b.ElementAt(first).Bytes()) == len(value),
 	// 	fmt.Sprintf(
 	// 		"ElementsFillBytes: element bytes len are not equal to len of value bytes: %d != %d",
@@ -209,7 +213,12 @@ func (b ByteArray) BytesSize() int {
 // 	readFromBuffer(b.v, binary.LittleEndian, value)
 // }
 
-func (b ByteArray) ReadTo(value interface{}) {
+// func (b ByteArray) int8Next(i int, v []uint8) []byte {
+// 	copy(Uint8CastToBytes(v), b.ElementAt(i).Bytes())
+// 	return buf[:]
+// }
+
+func (b ByteArray) ReadInto(value interface{}) {
 	if len(b.v) == 0 {
 		// There's nothing in the buffer to read
 		return
@@ -217,113 +226,86 @@ func (b ByteArray) ReadTo(value interface{}) {
 
 	switch kind := reflect.ValueOf(value).Kind(); kind {
 	default:
-		readFromBuffer(b.v, binary.LittleEndian, value)
+		b.readFromBuffer(binary.LittleEndian, value)
 	case reflect.Array, reflect.Slice:
-		switch bitutil.CeilByte(b.eSize) {
-		case 8:
-			next := func() func() []byte {
-				i := 0
-				return func() []byte {
-					buf := make([]uint8, 8)
-					copy(buf, b.ElementAt(i).Bytes())
-					i++
-					return buf
-				}
-			}()
-			readFromBufferToSlice(next, binary.LittleEndian, value)
-		case 16:
-			buf := make([]uint8, 16)
-			for i := 0; i < b.ElementsCapacity(); i++ {
-				copy(buf, b.ElementAt(i).Bytes())
-
-			}
-		case 32:
-			buf := make([]uint8, 32)
-			for i := 0; i < b.ElementsCapacity(); i++ {
-				copy(buf, b.ElementAt(i).Bytes())
-
-			}
-		case 64:
-			buf := make([]uint8, 64)
-			for i := 0; i < b.ElementsCapacity(); i++ {
-				copy(buf, b.ElementAt(i).Bytes())
-
-			}
-		default:
-			panic("primitive size greater than 64 bytes not supported")
-		}
+		b.readFromBufferToSlice(binary.LittleEndian, value)
 	}
 }
 
-func readFromBufferToSlice(next func() []byte, order binary.ByteOrder, data interface{}) {
+func (b ByteArray) readFromBufferToSlice(order binary.ByteOrder, data interface{}) {
 	// debug.Print("readFromBuffer-first - bs: %#b - len: %d | dataT: %T\n", bs, len(bs), data)
 	switch data := data.(type) {
 	case []bool:
-		for i := range data { // Easier to loop over the input for 8-bit values.
-			data[i] = next()[0] != 0
+		for i := range data {
+			// data[i] = next(i)[0] != 0
+			copy(BoolCastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []int8:
 		for i := range data {
-			data[i] = int8(next()[0])
+			// data[i] = int8(next(i)[0])
+			copy(Int8CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []uint8:
 		for i := range data {
-			data[i] = next()[0]
+			// data[i] = next(i)[0]
+			copy(Uint8CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case [8]uint8: // added for hardcoded buffers
 		for i := range data {
-			data[i] = next()[0]
+			// data[i] = next(i)[0]
+			copy(Uint8CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []int16:
 		for i := range data {
-			data[i] = int16(order.Uint16(next()))
+			// data[i] = int16(order.Uint16(next(i)))
+			copy(Int16CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []uint16:
 		for i := range data {
-			data[i] = order.Uint16(next())
+			// data[i] = order.Uint16(next(i))
+			copy(Uint16CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []int32:
 		for i := range data {
-			data[i] = int32(order.Uint32(next()))
+			// data[i] = int32(order.Uint32(next(i)))
+			copy(Int32CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []uint32:
 		for i := range data {
-			data[i] = order.Uint32(next())
+			// data[i] = order.Uint32(next(i))
+			copy(Uint32CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []int64:
 		for i := range data {
-			data[i] = int64(order.Uint64(next()))
+			// data[i] = int64(order.Uint64(next(i)))
+			copy(Int64CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []int:
-		switch unsafe.Sizeof(int(0)) {
-		case unsafe.Sizeof(int64(0)):
-			for i := range data {
-				data[i] = int(order.Uint64(next()))
-			}
-		case unsafe.Sizeof(int32(0)):
-			for i := range data {
-				data[i] = int(order.Uint32(next()))
-			}
+		for i := range data {
+			copy(IntCastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []uint64:
 		for i := range data {
-			data[i] = order.Uint64(next())
+			// data[i] = order.Uint64(next(i))
+			copy(Uint64CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []float32:
 		for i := range data {
-			data[i] = math.Float32frombits(order.Uint32(next()))
+			// data[i] = math.Float32frombits(order.Uint32(next(i)))
+			copy(Float32CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	case []float64:
 		for i := range data {
-			data[i] = math.Float64frombits(order.Uint64(next()))
+			// data[i] = math.Float64frombits(order.Uint64(next(i)))
+			copy(Float64CastToBytes(data[i:i+1]), b.ElementAt(i).Bytes())
 		}
 	default:
 		panic(fmt.Sprintf("readFromBuffer: unknown type: %T", data))
 	}
 }
 
-func readFromBuffer(bs []byte, order binary.ByteOrder, data interface{}) {
-	// debug.Print("readFromBuffer-first - bs: %#b - len: %d | dataT: %T\n", bs, len(bs), data)
+func (b ByteArray) readFromBuffer(order binary.ByteOrder, data interface{}) {
+	bs := b.v
 	if len(bs) == 0 {
 		// There's nothing in the buffer to read
 		return
@@ -340,7 +322,6 @@ func readFromBuffer(bs []byte, order binary.ByteOrder, data interface{}) {
 	case *uint16:
 		*data = order.Uint16(bs)
 	case *int32:
-		// debug.Print("readFromBuffer-second - bs: %#b | data: %d\n", bs, *data)
 		*data = int32(order.Uint32(bs))
 	case *uint32:
 		*data = order.Uint32(bs)
@@ -354,70 +335,156 @@ func readFromBuffer(bs []byte, order binary.ByteOrder, data interface{}) {
 			*data = int(order.Uint32(bs))
 		}
 	case *uint64:
-		// debug.Print("readFromBuffer-second - bs: %#b | data: %#b\n", bs, *data)
 		*data = order.Uint64(bs)
 	case *float32:
 		*data = math.Float32frombits(order.Uint32(bs))
 	case *float64:
 		*data = math.Float64frombits(order.Uint64(bs))
-	case []bool:
-		for i, x := range bs { // Easier to loop over the input for 8-bit values.
-			data[i] = x != 0
-		}
-	case []int8:
-		for i, x := range bs {
-			data[i] = int8(x)
-		}
-	case []uint8:
-		copy(data, bs)
-	case [8]uint8: // added for hardcoded buffers
-		// debug.Print("data before: %#b\n", data)
-		copy(data[:], bs)
-		// debug.Print("data after: %#b\n", data)
-	case []int16:
-		for i := range data {
-			data[i] = int16(order.Uint16(bs[2*i:]))
-		}
-	case []uint16:
-		for i := range data {
-			data[i] = order.Uint16(bs[2*i:])
-		}
-	case []int32:
-		for i := range data {
-			data[i] = int32(order.Uint32(bs[4*i:]))
-		}
-	case []uint32:
-		for i := range data {
-			data[i] = order.Uint32(bs[4*i:])
-		}
-	case []int64:
-		for i := range data {
-			data[i] = int64(order.Uint64(bs[8*i:]))
-		}
-	case []int:
-		switch unsafe.Sizeof(int(0)) {
-		case unsafe.Sizeof(int64(0)):
-			for i := range data {
-				data[i] = int(order.Uint64(bs[8*i:]))
-			}
-		case unsafe.Sizeof(int32(0)):
-			for i := range data {
-				data[i] = int(order.Uint32(bs[4*i:]))
-			}
-		}
-	case []uint64:
-		for i := range data {
-			data[i] = order.Uint64(bs[8*i:])
-		}
-	case []float32:
-		for i := range data {
-			data[i] = math.Float32frombits(order.Uint32(bs[4*i:]))
-		}
-	case []float64:
-		for i := range data {
-			data[i] = math.Float64frombits(order.Uint64(bs[8*i:]))
-		}
 	default:
 		panic(fmt.Sprintf("readFromBuffer: unknown type: %T", data))
 	}
+}
+
+func BoolCastToBytes(b []bool) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * boolSize
+	s.Cap = h.Cap * boolSize
+
+	return res
+}
+
+func Uint8CastToBytes(b []uint8) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * uint8Size
+	s.Cap = h.Cap * uint8Size
+
+	return res
+}
+
+func Uint16CastToBytes(b []uint16) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * uint16Size
+	s.Cap = h.Cap * uint16Size
+
+	return res
+}
+
+func Uint32CastToBytes(b []uint32) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * uint32Size
+	s.Cap = h.Cap * uint32Size
+
+	return res
+}
+
+func Uint64CastToBytes(b []uint64) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * uint64Size
+	s.Cap = h.Cap * uint64Size
+
+	return res
+}
+
+func Int8CastToBytes(b []int8) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * int8Size
+	s.Cap = h.Cap * int8Size
+
+	return res
+}
+
+func Int16CastToBytes(b []int16) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * int16Size
+	s.Cap = h.Cap * int16Size
+
+	return res
+}
+
+func Int32CastToBytes(b []int32) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * int32Size
+	s.Cap = h.Cap * int32Size
+
+	return res
+}
+
+func Int64CastToBytes(b []int64) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * int64Size
+	s.Cap = h.Cap * int64Size
+
+	return res
+}
+
+func IntCastToBytes(b []int) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * intSize
+	s.Cap = h.Cap * intSize
+
+	return res
+}
+
+func Float32CastToBytes(b []float32) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * uint32Size
+	s.Cap = h.Cap * uint32Size
+
+	return res
+}
+
+func Float64CastToBytes(b []float64) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * uint64Size
+	s.Cap = h.Cap * uint64Size
+
+	return res
 }
