@@ -643,7 +643,7 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 	debug.Print("In default. i: %d | batchSize: %d\n", i, batchSize)
 	const bufferSize int = 1024
 	var unpackBuffer [bufferSize]uint32
-	isBool := v.ElementSize() == 1
+	// isBool := v.ElementSize() == 1
 	for i < batchSize {
 		unpackSize := batchSize - i
 		if bufferSize < unpackSize {
@@ -653,7 +653,7 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 			arrow.Uint32Traits.CastFromBytes(buffer[byteOffset:]),
 			unpackBuffer[:], unpackSize, numBits,
 		)
-		debug.Print("numUnpacked: ", numUnpacked)
+		debug.Print("numUnpacked: %d", numUnpacked)
 		if numUnpacked == 0 {
 			break
 		}
@@ -669,20 +669,11 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 		// 	)
 		// }
 
-		if isBool {
-			for k := 0; k < numUnpacked; k++ {
-				v.ElementAt(i + k).PutBool(unpackBuffer[k] != 0)
-			}
-		} else {
-			for k := 0; k < numUnpacked; k++ {
-				v.ElementAt(i + k).PutUint32(unpackBuffer[k])
-			}
+		for k := 0; k < numUnpacked; k++ {
+			v.ElementAt(i + k).Copy(
+				arrow.Uint32Traits.CastToBytes(unpackBuffer[k : k+1]),
+			)
 		}
-
-		// TODO: We may be able to optimize by working with bytes directly
-		// v.ElementsSlice(i).Copy(
-		// 	arrow.Uint32Traits.CastToBytes(unpackBuffer[:numUnpacked]),
-		// )
 
 		i += numUnpacked
 		byteOffset += numUnpacked * numBits / 8
