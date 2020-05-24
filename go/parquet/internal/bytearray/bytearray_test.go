@@ -103,7 +103,7 @@ func BenchmarkElementsArrTest(b *testing.B) {
 	got := make([]uint8, 4)
 
 	for n := 0; n < b.N; n++ {
-		boolBA.ReadTo(got)
+		boolBA.ReadInto(got)
 		// testutil.AssertDeepEq(t, got, want)
 	}
 
@@ -121,7 +121,7 @@ func TestElementsArrTest(t *testing.T) {
 		want := []uint8{1, 1, 1, 1}
 		got := make([]uint8, 4)
 
-		boolBA.ReadTo(got)
+		boolBA.ReadInto(got)
 		testutil.AssertDeepEq(t, got, want)
 	}
 
@@ -136,7 +136,7 @@ func TestElementsArrTest(t *testing.T) {
 		want := []uint16{1, 1, 1, 1}
 		got := make([]uint16, 4)
 
-		boolBA.ReadTo(got)
+		boolBA.ReadInto(got)
 		testutil.AssertDeepEq(t, got, want)
 	}
 
@@ -151,7 +151,7 @@ func TestElementsArrTest(t *testing.T) {
 		want := []uint16{1, 1, 1, 1}
 		got := make([]uint16, 4)
 
-		boolBA.ReadTo(got)
+		boolBA.ReadInto(got)
 		testutil.AssertDeepEq(t, got, want)
 	}
 }

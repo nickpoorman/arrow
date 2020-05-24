@@ -196,28 +196,40 @@ func ValidateRle(t *testing.T, values []int, bitWidth int, expectedEncoding []by
 	// Verify read
 	{
 		decoder := NewRleDecoder(buffer, length, bitWidth)
+		final := make([]int, 0, len(values))
 		for i := 0; i < len(values); i++ {
 			debug.Print("\nloop i: %d - looking for: %d\n", i, values[i])
 			var v uint64
-			var valBuf [8]byte
+			// var valBuf [8]byte
+			debug.Print("need buffer of size bytes: %d", int(bytearray.BytesForBits(int64(bitWidth))))
+			valBuf := make([]byte, int(bytearray.BytesForBits(int64(bitWidth))))
 			result := decoder.Get(valBuf[:])
-			bytearray.NewByteArray(valBuf[:], 8).ReadInto(&v)
+			bytearray.NewByteArray(valBuf[:], int(bytearray.BytesForBits(int64(bitWidth)))).ReadInto(&v)
 			testutil.AssertTrue(t, result)
 			testutil.AssertEqInt(t, int(v), values[i])
+			final = append(final, int(v))
 		}
+		debug.Print("\ndecoder.Get final values: \n%+v", final)
+		debug.Print("\ndecoder.Get final values want: \n%+v", values)
 	}
 
 	// Verify batch read
 	{
 		decoder := NewRleDecoder(buffer, length, bitWidth)
-		valuesReadBA := bytearray.NewByteArray(make([]byte, intSize*len(values)), intSize)
-		testutil.AssertEqInt(t, len(values), decoder.GetBatch(valuesReadBA.Bytes(), len(values)))
+		// buf := make([]byte, intSize*len(values))
+		valBuf := make([]byte, int(bytearray.BytesForBits(int64(bitWidth)))*len(values))
+
+		result := decoder.GetBatch(valBuf, len(values))
+		debug.Print("GetBatch result: %d | len(values): %d", result, len(values))
+		testutil.AssertEqInt(t, len(values), result)
+
 		valuesRead := make([]int, len(values))
-		valuesReadBA.ReadInto(valuesRead)
-		testutil.AssertDeepEq(t, valuesRead, values)
-		// if !reflect.DeepEqual(valuesRead, values) {
-		// 	panic(fmt.Errorf("AssertDeepEq: got=%+v; want=%+v\n", valuesRead, values))
-		// }
+		valBufWrapper := bytearray.NewByteArray(valBuf, int(bytearray.BytesForBits(int64(bitWidth))))
+		valBufWrapper.ReadInto(valuesRead)
+		// testutil.AssertDeepEq(t, valuesRead, values)
+		if !reflect.DeepEqual(valuesRead, values) {
+			panic(fmt.Errorf("AssertDeepEq: got=\n%+v; \nwant=\n%+v\n", valuesRead, values))
+		}
 	}
 }
 

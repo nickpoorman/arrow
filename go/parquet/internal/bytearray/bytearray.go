@@ -6,6 +6,8 @@ import (
 	"math"
 	"reflect"
 	"unsafe"
+
+	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 )
 
 const boolSize = int(unsafe.Sizeof(bool(false)))
@@ -14,8 +16,8 @@ const uint16Size = int(unsafe.Sizeof(uint16(0)))
 const uint32Size = int(unsafe.Sizeof(uint32(0)))
 const uint64Size = int(unsafe.Sizeof(uint64(0)))
 const intSize = int(unsafe.Sizeof(int(0)))
-const int8Size = int(unsafe.Sizeof(int32(0)))
-const int16Size = int(unsafe.Sizeof(int32(0)))
+const int8Size = int(unsafe.Sizeof(int8(0)))
+const int16Size = int(unsafe.Sizeof(int16(0)))
 const int32Size = int(unsafe.Sizeof(int32(0)))
 const int64Size = int(unsafe.Sizeof(int64(0)))
 
@@ -34,19 +36,10 @@ func NewByteArray(v []byte, eSizeBytes int) ByteArray {
 func NewByteArrayBits(v []byte, eSizeBits int) ByteArray {
 	return ByteArray{
 		v:     v,
-		eSize: int(bytesForBits(int64(eSizeBits))),
+		eSize: int(BytesForBits(int64(eSizeBits))),
 	}
 }
-func bytesForBits(bits int64) int64 { return (bits + 7) >> 3 }
-
-func FromUint64(v uint64) ByteArray {
-	var b [8]byte
-	binary.LittleEndian.PutUint64(b[:], v)
-	return ByteArray{
-		v:     b[:],
-		eSize: 8,
-	}
-}
+func BytesForBits(bits int64) int64 { return (bits + 7) >> 3 }
 
 func (b ByteArray) ElementSize() int {
 	return b.eSize
@@ -66,6 +59,7 @@ func (b ByteArray) ElementsCapacity() int {
 
 // first and last are the places value will be placed [first,last)
 func (b ByteArray) ElementsFillBytes(first, last int, value []byte) {
+	debug.Print("ElementsFillBytes - first: %d | last: %d | value: %+v", first, last, value)
 	// debug.Assert(len(b.ElementAt(first).Bytes()) == len(value),
 	// 	fmt.Sprintf(
 	// 		"ElementsFillBytes: element bytes len are not equal to len of value bytes: %d != %d",
@@ -305,11 +299,11 @@ func (b ByteArray) readFromBufferToSlice(order binary.ByteOrder, data interface{
 }
 
 func (b ByteArray) readFromBuffer(order binary.ByteOrder, data interface{}) {
-	bs := b.v
-	if len(bs) == 0 {
+	if len(b.v) == 0 {
 		// There's nothing in the buffer to read
 		return
 	}
+	bs := b.v
 	switch data := data.(type) {
 	case *bool:
 		*data = bs[0] != 0
@@ -318,27 +312,67 @@ func (b ByteArray) readFromBuffer(order binary.ByteOrder, data interface{}) {
 	case *uint8:
 		*data = bs[0]
 	case *int16:
+		if len(b.v) < 2 {
+			bs = make([]byte, 2)
+			copy(bs, b.v)
+		}
 		*data = int16(order.Uint16(bs))
 	case *uint16:
+		if len(b.v) < 2 {
+			bs = make([]byte, 2)
+			copy(bs, b.v)
+		}
 		*data = order.Uint16(bs)
 	case *int32:
+		if len(b.v) < 4 {
+			bs = make([]byte, 4)
+			copy(bs, b.v)
+		}
 		*data = int32(order.Uint32(bs))
 	case *uint32:
+		if len(b.v) < 4 {
+			bs = make([]byte, 4)
+			copy(bs, b.v)
+		}
 		*data = order.Uint32(bs)
 	case *int64:
+		if len(b.v) < 8 {
+			bs = make([]byte, 8)
+			copy(bs, b.v)
+		}
 		*data = int64(order.Uint64(bs))
 	case *int:
 		switch unsafe.Sizeof(int(0)) {
 		case unsafe.Sizeof(int64(0)):
+			if len(b.v) < 8 {
+				bs = make([]byte, 8)
+				copy(bs, b.v)
+			}
 			*data = int(order.Uint64(bs))
 		case unsafe.Sizeof(int32(0)):
+			if len(b.v) < 4 {
+				bs = make([]byte, 4)
+				copy(bs, b.v)
+			}
 			*data = int(order.Uint32(bs))
 		}
 	case *uint64:
+		if len(b.v) < 8 {
+			bs = make([]byte, 8)
+			copy(bs, b.v)
+		}
 		*data = order.Uint64(bs)
 	case *float32:
+		if len(b.v) < 4 {
+			bs = make([]byte, 4)
+			copy(bs, b.v)
+		}
 		*data = math.Float32frombits(order.Uint32(bs))
 	case *float64:
+		if len(b.v) < 8 {
+			bs = make([]byte, 8)
+			copy(bs, b.v)
+		}
 		*data = math.Float64frombits(order.Uint64(bs))
 	default:
 		panic(fmt.Sprintf("readFromBuffer: unknown type: %T", data))

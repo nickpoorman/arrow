@@ -317,15 +317,15 @@ func getValue(numBits int, v bytearray.ByteArray, maxBytes int, buffer []byte,
 		// var buf3 [8]byte
 		// writeToBuffer(buf3[:], binary.LittleEndian, reflect.ValueOf(v).Elem().Interface())
 		// bo := binary.LittleEndian.Uint64(buf3[:]) | b
-		// bo := v.Uint64() | b
+		bo := v.Uint64() | b
 
 		// // bo := reflect.ValueOf(v).Elem().Convert(reflect.TypeOf(uint64(0))).Uint() | b
-		// var buf2 [8]byte
-		// binary.LittleEndian.PutUint64(buf2[:], bo)
+		var buf2 [8]byte
+		binary.LittleEndian.PutUint64(buf2[:], bo)
 		// // debug.Print("v was: %v\n", *v.(*int32))
 		// readFromBuffer(buf2[:], binary.LittleEndian, v)
 		// // debug.Print("v is now: %v\n", *v.(*int32))
-		v.Copy(bytearray.FromUint64(v.Uint64() | b).Bytes())
+		v.Copy(buf2[:])
 
 		debug.Assert(*bitOffset <= 64, "Assert: *bitOffset <= 64")
 	}
@@ -565,8 +565,8 @@ func (b *BitReader) GetBatch(numBits int, v bytearray.ByteArray, batchSize int) 
 	debug.Assert(b.buffer != nil, "buffer must not be nil")
 	// TODO: revisit this limit if necessary
 	debug.Assert(numBits <= 32, "numBits must be less than or equal to 32")
-	// debug.Assert(numBits <= binary.Size(v)*8, "numBits must be less than or queal to the size of v")
-	debug.Assert(numBits <= v.BytesSize()*8, "numBits must be less than or queal to the size of v")
+	// debug.Assert(numBits <= binary.Size(v)*8, "numBits must be less than or equal to the size of v")
+	debug.Assert(numBits <= v.BytesSize()*8, "numBits must be less than or equal to the size of v")
 
 	debug.Print("GetBatch-frist - numBits: %d | batchSize: %d\n", numBits, batchSize)
 

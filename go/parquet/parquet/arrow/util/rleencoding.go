@@ -229,12 +229,15 @@ func (d *RleDecoder) GetBatch(buffer []byte, batchSize int) int {
 	for valuesRead < batchSize {
 		remaining := batchSize - valuesRead
 
-		debug.Print("remaining: %d | valuesRead-loop: %d | batchSize: %d\n", remaining, valuesRead, batchSize)
+		debug.Print("remaining: %d | valuesRead-loop: %d | batchSize: %d | repeatCount: %d | literalCount: %d \n",
+			remaining, valuesRead, batchSize, d.repeatCount, d.literalCount)
+
 		if d.repeatCount > 0 {
 			debug.Print("d.repeatCount > 0 | %d\n", d.repeatCount)
 
 			repeatBatch := util.MinInt(remaining, d.repeatCount)
-			out.ElementsFillBytes(outOffset, repeatBatch, d.currentValue[:])
+			debug.Print("outOffset: %d | repeatBatch: %d | currentValue: %+v", outOffset, repeatBatch, d.currentValue[:])
+			out.ElementsFillBytes(outOffset, outOffset+repeatBatch, d.currentValue[:])
 
 			d.repeatCount -= repeatBatch
 			valuesRead += repeatBatch
@@ -249,6 +252,7 @@ func (d *RleDecoder) GetBatch(buffer []byte, batchSize int) int {
 				literalBatch,
 			)
 			if actualRead != literalBatch {
+				debug.Print("returning: actualRead != literalBatch | %d != %d\n", actualRead, literalBatch)
 				return valuesRead
 			}
 
