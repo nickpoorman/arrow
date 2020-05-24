@@ -13,6 +13,9 @@ import (
 	bitutilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util/bitutil"
 )
 
+// The ColumnReader that will create these will have a physical type on the ColumnDescriptor.
+// Instead of creating one for each possible type, lets build logic off the physical type.
+
 // If it has a specific underlying type then we need an interface for it
 // Encoder
 //  |_ encoderBase
@@ -54,7 +57,7 @@ type PlainEncoder interface {
 
 // TODO: Fix comment below after verify
 // TypedEncoder can be a PlainEncoder or a DictEncoder?
-type TypedEncoder interface {
+type TypedEncoderInterface interface {
 	Put(src interface{}, numValues int) error
 	PutSpaced(src interface{}, validBits []byte, validBitsOffset int) error
 
@@ -96,7 +99,7 @@ type Decoder interface {
 	// 	validBits []byte, validBitsOffset int) (int, error)
 }
 
-type TypedDecoder interface {
+type TypedDecoderInterface interface {
 	Decoder
 
 	// Decode values into a buffer
@@ -144,15 +147,17 @@ type TypedDecoder interface {
 }
 
 type DictDecoder interface {
-	TypedDecoder
+	TypedDecoderInterface
 
-	SetDict(dictionary TypedDecoder) error
+	SetDict(dictionary TypedDecoderInterface) error
 }
 
 // ----------------------------------------------------------------------
 // Base encoder implementation
 
 type encoderBase struct {
+	encodingTraits EncodingTraits
+
 	// For accessing type-specific metadata, like FIXED_LEN_BYTE_ARRAY
 	descr *ColumnDescriptor
 	enc   EncodingType
@@ -162,16 +167,20 @@ type encoderBase struct {
 	typeLength int
 }
 
-func newEncoderBase(descr *ColumnDescriptor, encoding EncodingType, pool memory.Allocator) encoderBase {
+func newEncoderBase(
+	encodingTraits EncodingTraits, descr *ColumnDescriptor,
+	encoding EncodingType, pool memory.Allocator) encoderBase {
+
 	typeLength := -1
 	if descr != nil {
 		typeLength = descr.typeLength()
 	}
 	return encoderBase{
-		descr:      descr,
-		enc:        encoding,
-		pool:       pool,
-		typeLength: typeLength,
+		encodingTraits: encodingTraits,
+		descr:          descr,
+		enc:            encoding,
+		pool:           pool,
+		typeLength:     typeLength,
 	}
 }
 
@@ -185,22 +194,27 @@ type Int64PlainEncoder struct {
 	encoderBase
 
 	// base
-	// dtype PhysicalType // TODO: Remove (cleanup)
 	sink *array.Int64BufferBuilder
 }
 
-func NewInt64PlainEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64PlainEncoder, error) {
-	return &Int64PlainEncoder{
-		encoderBase: newEncoderBase(descr, EncodingType_PLAIN, pool),
+func NewInt64PlainEncoder(
+	encodingTraits EncodingTraits, descr *ColumnDescriptor,
+	pool memory.Allocator) (*Int64PlainEncoder, error) {
 
-		// dtype: Int64Type, // TODO: Remove (cleanup)
+	return &Int64PlainEncoder{
+		encoderBase: newEncoderBase(
+			encodingTraits, descr, EncodingType_PLAIN, pool),
 		sink: array.NewInt64BufferBuilder(pool),
 	}, nil
 }
 
-func (e *Int64PlainEncoder) EstimatedDataEncodedSize() int { return e.sink.Len() }
+func (e *Int64PlainEncoder) EstimatedDataEncodedSize() int {
+	return e.sink.Len()
+}
 
-func (e *Int64PlainEncoder) FlushValues() *memory.Buffer { return e.sink.Finish() }
+func (e *Int64PlainEncoder) FlushValues() *memory.Buffer {
+	return e.sink.Finish()
+}
 
 func (e *Int64PlainEncoder) Put(src interface{}, numValues int) error {
 	switch v := src.(type) {
@@ -280,7 +294,8 @@ func (e *Int64PlainEncoder) PutSpacedValues(
 	buffer.Resize(arrow.Int64Traits.BytesRequired(numValues))
 
 	numValidValues := 0
-	validBitsReader := bitutilext.NewBitmapReader(validBits, validBitsOffset, numValues)
+	validBitsReader := bitutilext.NewBitmapReader(
+		validBits, validBitsOffset, numValues)
 	data := arrow.Int64Traits.CastFromBytes(buffer.Bytes())
 
 	for i := 0; i < numValues; i++ {
@@ -313,8 +328,7 @@ type Int64DictEncoder struct {
 
 	dataType arrow.DataType
 
-	dtype PhysicalType
-	sink  *array.Int64BufferBuilder
+	sink *array.Int64BufferBuilder
 
 	// Indices that have not yet be written out by WriteIndices().
 	bufferedIndices []int32 // C++ implementation has this as an ArrowPoolVector
@@ -326,16 +340,15 @@ type Int64DictEncoder struct {
 }
 
 //+ func New{{.DType}}DictEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*{{.DType}}DictEncoder, error) {
-func NewInt64DictEncoder(descr *ColumnDescriptor, pool memory.Allocator, dataType arrow.DataType) (*Int64DictEncoder, error) {
+func NewInt64DictEncoder(encodingTraits EncodingTraits, descr *ColumnDescriptor,
+	pool memory.Allocator) (*Int64DictEncoder, error) {
+
 	return &Int64DictEncoder{
-		encoderBase: newEncoderBase(descr, EncodingType_PLAIN_DICTIONARY, pool),
-
-		dataType: dataType,
-
-		dtype: Int64Type,
-		sink:  array.NewInt64BufferBuilder(pool),
-
-		memoTable: utilext.NewMemoTable(pool, kInitialHashTableSize, dataType),
+		encoderBase: newEncoderBase(
+			encodingTraits, descr, EncodingType_PLAIN_DICTIONARY, pool),
+		sink: array.NewInt64BufferBuilder(pool),
+		memoTable: utilext.NewMemoTable(
+			pool, kInitialHashTableSize, encodingTraits.ArrowType),
 	}, nil
 }
 
@@ -392,7 +405,8 @@ func (e *Int64DictEncoder) PutValue(v int64) error {
 		e.dictEncodedSize += binary.Size(v) // SIZE_OF_T // TODO: Maybe we generate these?
 	}
 
-	memoIndex, err := e.memoTable.GetOrInsert(e.dataType.BuildScalar(v), onFound, onNotFound)
+	memoIndex, err := e.memoTable.GetOrInsert(
+		e.dataType.BuildScalar(v), onFound, onNotFound)
 	if err != nil {
 		return err
 	}
@@ -425,7 +439,8 @@ func (e *Int64DictEncoder) PutValues(values array.Interface) error {
 }
 
 func (e *Int64DictEncoder) PutSpaced(
-	src interface{}, numValues int, validBits []byte, validBitsOffset int) error {
+	src interface{}, numValues int,
+	validBits []byte, validBitsOffset int) error {
 
 	srcInt64, ok := src.([]int64)
 	if !ok {
@@ -436,7 +451,8 @@ func (e *Int64DictEncoder) PutSpaced(
 		)
 	}
 
-	validBitsReader := bitutilext.NewBitmapReader(validBits, validBitsOffset, numValues)
+	validBitsReader := bitutilext.NewBitmapReader(
+		validBits, validBitsOffset, numValues)
 	for i := 0; i < numValues; i++ {
 		if validBitsReader.IsSet() {
 			if err := e.PutValue(srcInt64[i]); err != nil {
@@ -490,7 +506,9 @@ func (e *Int64DictEncoder) clearIndicies() {
 }
 
 //+ func {{.DType}}AssertCanPutDictionary(encoder *{{.DType}}DictEncoder, dict array.Interface) error {
-func Int64AssertCanPutDictionary(encoder *Int64DictEncoder, dict array.Interface) error {
+func Int64AssertCanPutDictionary(
+	encoder *Int64DictEncoder, dict array.Interface) error {
+
 	if dict.NullN() > 0 {
 		fmt.Errorf(
 			"Inserted dictionary cannot cannot contain nulls: %w",
@@ -536,7 +554,8 @@ func (e *Int64DictEncoder) PutDictionary(values array.Interface) error {
 
 func (e *Int64DictEncoder) FlushValues() *memory.Buffer {
 	buffer := AllocateBuffer(e.pool, int(e.EstimatedDataEncodedSize()))
-	resultSize := e.WriteIndices(buffer.Buf(), int(e.EstimatedDataEncodedSize()))
+	resultSize := e.WriteIndices(
+		buffer.Buf(), int(e.EstimatedDataEncodedSize()))
 	buffer.ResizeNoShrink(resultSize)
 	return buffer
 }
@@ -545,9 +564,11 @@ func (e *Int64DictEncoder) FlushValues() *memory.Buffer {
 // DictEncodedSize() bytes.
 func (e *Int64DictEncoder) WriteDict(buffer []byte) {
 	// For primitive types, only a memcpy
-	debug.Assert(e.dictEncodedSize == binary.Size(int64(0))*int(e.memoTable.Size()),
+	debug.Assert(
+		e.dictEncodedSize == binary.Size(int64(0))*int(e.memoTable.Size()),
 		fmt.Sprintf(
-			"Assert: e.dictEncodedSize == binary.Size(int64(0))*int(e.memoTable.Size())"+
+			"Assert: e.dictEncodedSize == "+
+				"binary.Size(int64(0))*int(e.memoTable.Size())"+
 				" | %d == %d",
 			e.dictEncodedSize, binary.Size(int64(0))*int(e.memoTable.Size()),
 		))
@@ -558,6 +579,8 @@ func (e *Int64DictEncoder) WriteDict(buffer []byte) {
 // Base decoder implementation
 
 type decoderBase struct {
+	encodingTraits EncodingTraits
+
 	// For accessing type-specific metadata, like FIXED_LEN_BYTE_ARRAY
 	descr      *ColumnDescriptor
 	enc        EncodingType
@@ -567,10 +590,14 @@ type decoderBase struct {
 	typeLength int
 }
 
-func newDecoderBase(descr *ColumnDescriptor, enc EncodingType) *decoderBase {
+func newDecoderBase(
+	encodingTraits EncodingTraits, descr *ColumnDescriptor,
+	enc EncodingType) *decoderBase {
+
 	return &decoderBase{
-		descr: descr,
-		enc:   enc,
+		encodingTraits: encodingTraits,
+		descr:          descr,
+		enc:            enc,
 	}
 }
 
@@ -590,13 +617,14 @@ func (d *decoderBase) Encoding() EncodingType { return d.enc }
 
 type Int64PlainDecoder struct {
 	decoderBase
-	dtype PhysicalType
 }
 
-func NewInt64PlainDecoder(descr *ColumnDescriptor) (*Int64PlainDecoder, error) {
+func NewInt64PlainDecoder(
+	encodingTraits EncodingTraits,
+	descr *ColumnDescriptor) (*Int64PlainDecoder, error) {
+
 	return &Int64PlainDecoder{
-		decoderBase: *newDecoderBase(descr, EncodingType_PLAIN),
-		dtype:       Int64Type,
+		decoderBase: *newDecoderBase(encodingTraits, descr, EncodingType_PLAIN),
 	}, nil
 }
 
@@ -628,7 +656,9 @@ func (d *Int64PlainDecoder) DecodeSpaced(
 
 // numValues is the number of values in it's type,
 // i.e. not the number of bytes.
-func (d *Int64PlainDecoder) Decode(buffer interface{}, maxValues int) (int, error) {
+func (d *Int64PlainDecoder) Decode(
+	buffer interface{}, maxValues int) (int, error) {
+
 	switch v := buffer.(type) {
 	case []int64:
 		return d.DecodeValues(v, maxValues)
@@ -644,11 +674,14 @@ func (d *Int64PlainDecoder) Decode(buffer interface{}, maxValues int) (int, erro
 
 // numValues is the number of values in it's type,
 // i.e. not the number of bytes.
-func (d *Int64PlainDecoder) DecodeValues(buffer []int64, maxValues int) (int, error) {
+func (d *Int64PlainDecoder) DecodeValues(
+	buffer []int64, maxValues int) (int, error) {
+
 	if d.numValues < maxValues {
 		maxValues = d.numValues
 	}
-	bytesConsumed, err := d.DecodePlain(d.data, d.len, maxValues, d.typeLength, buffer)
+	bytesConsumed, err := d.DecodePlain(
+		d.data, d.len, maxValues, d.typeLength, buffer)
 	if err != nil {
 		return 0, err
 	}
@@ -712,9 +745,14 @@ type Int64DictDecoder struct {
 // dictionary is not guaranteed to persist in memory after this call so the
 // dictionary decoder needs to copy the data out if necessary.
 //+ func New{{.DType}}DictDecoder(descr *ColumnDescriptor, pool memory.Allocator) (*{{.DType}}DictDecoder, error) {
-func NewInt64DictDecoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64DictDecoder, error) {
+func NewInt64DictDecoder(
+	encodingTraits EncodingTraits, descr *ColumnDescriptor,
+	pool memory.Allocator) (*Int64DictDecoder, error) {
+
 	return &Int64DictDecoder{
-		decoderBase:         *newDecoderBase(descr, EncodingType_RLE_DICTIONARY),
+		decoderBase: *newDecoderBase(
+			encodingTraits, descr, EncodingType_RLE_DICTIONARY),
+
 		sink:                array.NewInt64BufferBuilder(pool),
 		dictionary:          AllocateBuffer(pool, 0),
 		dictionaryLength:    0,
@@ -724,16 +762,19 @@ func NewInt64DictDecoder(descr *ColumnDescriptor, pool memory.Allocator) (*Int64
 	}, nil
 }
 
-func (d *Int64DictDecoder) decodeDict(dictionary TypedDecoder) (int, error) {
+func (d *Int64DictDecoder) decodeDict(
+	dictionary TypedDecoderInterface) (int, error) {
+
 	d.dictionaryLength = int32(dictionary.valuesLeft())
 	d.dictionary.ResizeNoShrink(
+		// change this to use the type trait for the physical type
 		arrow.Int64Traits.BytesRequired(int(d.dictionaryLength)),
 	)
 	return dictionary.Decode(d.dictionary.Buf(), int(d.dictionaryLength))
 }
 
 // Perform type-specific initiatialization
-func (d *Int64DictDecoder) SetDict(dictionary TypedDecoder) error {
+func (d *Int64DictDecoder) SetDict(dictionary TypedDecoderInterface) error {
 	// TODO(nickpoorman): This is different for each type we generate
 	_, err := d.decodeDict(dictionary)
 	return err
@@ -759,12 +800,14 @@ func (d *Int64DictDecoder) SetData(numValues int, data []byte, len int) error {
 
 // numValues is the number of values in it's type,
 // i.e. not the number of bytes.
-func (d *Int64DictDecoder) Decode(buffer interface{}, numValues int) (int, error) {
+func (d *Int64DictDecoder) Decode(
+	buffer interface{}, numValues int) (int, error) {
+
 	switch v := buffer.(type) {
-	case []int64:
-		return d.DecodeValues(v, numValues)
+	// case []int64:
+	// 	return d.DecodeValues(v, numValues)
 	case []byte:
-		return d.DecodeValues(arrow.Int64Traits.CastFromBytes(v), numValues)
+		return d.DecodeBuffer(v, numValues)
 	default:
 		return 0, fmt.Errorf(
 			"{{.DType}} Decode: to %T not supported",
@@ -773,19 +816,17 @@ func (d *Int64DictDecoder) Decode(buffer interface{}, numValues int) (int, error
 	}
 }
 
-// func (d *Int64DictDecoder) Decode(buffer {{.CType}}, numValues int) (int, error) {
-func (d *Int64DictDecoder) DecodeValues(values []int64, numValues int) (int, error) {
+func (d *Int64DictDecoder) DecodeBuffer(
+	buffer []byte, numValues int) (int, error) {
+
 	if d.numValues < numValues {
 		numValues = d.numValues
 	}
 
 	decodedValues := d.idxDecoder.GetBatchWithDict(
-		// arrow.{{.DType}}Traits.CastFromBytes(d.dictionary.Bytes()),
-		// arrow.Int64Traits.CastFromBytes(d.dictionary.Bytes()),
 		d.dictionary.Bytes(),
 		d.dictionaryLength,
-		// values,
-		arrow.Int64Traits.CastToBytes(values),
+		buffer,
 		numValues)
 
 	if decodedValues != numValues {
@@ -797,14 +838,15 @@ func (d *Int64DictDecoder) DecodeValues(values []int64, numValues int) (int, err
 
 // numValues is the number of values in it's type,
 // i.e. not the number of bytes.
-func (d *Int64DictDecoder) DecodeSpaced(src interface{}, numValues int, nullCount int,
+func (d *Int64DictDecoder) DecodeSpaced(
+	src interface{}, numValues int, nullCount int,
 	validBits []byte, validBitsOffset int64) (int, error) {
 	switch v := src.(type) {
-	case []int64:
-		return d.DecodeSpacedValues(v,
-			numValues, nullCount, validBits, validBitsOffset)
+	// case []int64:
+	// 	return d.DecodeSpacedValues(v,
+	// 		numValues, nullCount, validBits, validBitsOffset)
 	case []byte:
-		return d.DecodeSpacedValues(arrow.Int64Traits.CastFromBytes(v),
+		return d.decodeSpacedBuffer(v,
 			numValues, nullCount, validBits, validBitsOffset)
 	default:
 		return 0, fmt.Errorf(
@@ -814,14 +856,17 @@ func (d *Int64DictDecoder) DecodeSpaced(src interface{}, numValues int, nullCoun
 	}
 }
 
-// func (d *Int64DictDecoder) DecodeSpacedValues(buffer {{.CType}}, numValues int, nullCount int,
-func (d *Int64DictDecoder) DecodeSpacedValues(buffer []int64, numValues int, nullCount int,
+func (d *Int64DictDecoder) decodeSpacedBuffer(
+	buffer []byte, numValues int, nullCount int,
 	validBits []byte, validBitsOffset int64) (int, error) {
 	numValues = util.MinInt(numValues, d.numValues)
 	if numValues != d.idxDecoder.GetBatchWithDictSpaced(
-		// arrow.{{.DType}}Traits.CastFromBytes(d.dictionary.Bytes()),
-		arrow.Int64Traits.CastFromBytes(d.dictionary.Bytes()),
-		d.dictionaryLength, buffer, numValues, nullCount, validBits,
+		d.dictionary.Bytes(),
+		d.dictionaryLength,
+		buffer,
+		numValues,
+		nullCount,
+		validBits,
 		validBitsOffset,
 	) {
 		return 0, ParquetEofException
@@ -830,13 +875,34 @@ func (d *Int64DictDecoder) DecodeSpacedValues(buffer []int64, numValues int, nul
 	return numValues, nil
 }
 
-func (d *Int64DictDecoder) DecodeArrow(numValues int, nullCount int, validBits []byte,
-	validBitsOffset int64) {
+// // func (d *Int64DictDecoder) DecodeSpacedValues(buffer {{.CType}}, numValues int, nullCount int,
+// func (d *Int64DictDecoder) decodeSpacedValues(buffer []int64, numValues int, nullCount int,
+// 	validBits []byte, validBitsOffset int64) (int, error) {
+// 	numValues = util.MinInt(numValues, d.numValues)
+// 	if numValues != d.idxDecoder.GetBatchWithDictSpaced(
+// 		// arrow.{{.DType}}Traits.CastFromBytes(d.dictionary.Bytes()),
+// 		// arrow.Int64Traits.CastFromBytes(d.dictionary.Bytes()),
+// 		d.dictionary.Bytes(),
+// 		d.dictionaryLength,
+// 		arrow.Int64Traits.CastFromBytes(buffer),
+// 		numValues,
+// 		nullCount,
+// 		validBits,
+// 		validBitsOffset,
+// 	) {
+// 		return 0, ParquetEofException
+// 	}
+// 	d.numValues -= numValues
+// 	return numValues, nil
+// }
+
+func (d *Int64DictDecoder) DecodeArrow(
+	numValues int, nullCount int, validBits []byte, validBitsOffset int64) {
 	panic("not implemented")
 }
 
-func (d *Int64DictDecoder) DecodeArrowDict(numValues int, nullCount int, validBits []byte,
-	validBitsOffset int64) {
+func (d *Int64DictDecoder) DecodeArrowDict(
+	numValues int, nullCount int, validBits []byte, validBitsOffset int64) {
 	panic("not implemented")
 }
 
@@ -844,8 +910,9 @@ func (d *Int64DictDecoder) InsertDictionary(builder array.Builder) {
 	panic("not implemented")
 }
 
-func (d *Int64DictDecoder) DecodeIndicesSpaced(numValues int, nullCount int,
-	validBits []byte, validBitsOffset int64, builder array.Builder) (int, error) {
+func (d *Int64DictDecoder) DecodeIndicesSpaced(
+	numValues int, nullCount int, validBits []byte, validBitsOffset int64,
+	builder array.Builder) (int, error) {
 
 	if numValues > 0 {
 		d.indicesScratchSpace.Resize(
@@ -853,7 +920,7 @@ func (d *Int64DictDecoder) DecodeIndicesSpaced(numValues int, nullCount int,
 		)
 	}
 
-	indicesBuffer := arrow.Int32Traits.CastFromBytes(d.indicesScratchSpace.Buf())
+	indicesBuffer := d.indicesScratchSpace.Buf()
 
 	if numValues != d.idxDecoder.GetBatchSpaced(numValues, nullCount, validBits,
 		validBitsOffset, indicesBuffer) {
@@ -863,51 +930,50 @@ func (d *Int64DictDecoder) DecodeIndicesSpaced(numValues int, nullCount int,
 	panic("not implemented")
 }
 
-func (d *Int64DictDecoder) DecodeBuffer(buffer interface{}, makeValues int) (int, error) {
-	panic("not implemented")
-}
+// func (d *Int64DictDecoder) DecodeBuffer(buffer interface{}, makeValues int) (int, error) {
+// 	panic("not implemented")
+// }
 
 // ----------------------------------------------------------------------
 // Factory functions
 
 func NewTypedEncoder(
-	dtype PhysicalType, encoding EncodingType, useDictionary bool,
-	descr *ColumnDescriptor, pool memory.Allocator, dataType arrow.DataType) (TypedEncoder, error) {
+	encoding EncodingType, useDictionary bool, descr *ColumnDescriptor,
+	pool memory.Allocator) (TypedEncoderInterface, error) {
 
 	if pool == nil {
 		pool = memory.DefaultAllocator
 	}
 
-	encoder, err := NewEncoder(dtype.typeNum(), encoding, useDictionary, descr, pool, dataType)
+	encoder, err := NewEncoder(encoding, useDictionary, descr, pool)
 	if err != nil {
 		return nil, err
 	}
-	return encoder.(TypedEncoder), nil
+	return encoder.(TypedEncoderInterface), nil
 }
 
 // Encode goes from Arrow into Parquet
-func NewEncoder(
-	typeNum Type, encoding EncodingType, useDictionary bool,
-	descr *ColumnDescriptor, pool memory.Allocator, dataType arrow.DataType) (Encoder, error) {
+func NewEncoder(encoding EncodingType, useDictionary bool,
+	descr *ColumnDescriptor, pool memory.Allocator) (Encoder, error) {
 
 	if pool == nil {
 		pool = memory.DefaultAllocator
 	}
 
 	if useDictionary {
-		switch typeNum {
+		switch descr.PhysicalType() {
 		case Type_INT64:
-			return NewInt64DictEncoder(descr, pool, dataType)
+			return NewInt64DictEncoder(Int64EncodingTraits, descr, pool)
 		default:
 			return nil, fmt.Errorf(
 				"dict encoder for %s not implemented: %w",
-				TypeToString(typeNum),
+				TypeToString(descr.PhysicalType()),
 				ParquetNYIException,
 			)
 		}
 
 	} else if encoding == EncodingType_PLAIN {
-		return NewPlainEncoder(typeNum, descr, pool)
+		return NewPlainEncoder(descr, pool)
 
 	} else {
 		return nil, fmt.Errorf(
@@ -917,38 +983,36 @@ func NewEncoder(
 	}
 }
 
-func NewPlainEncoder(
-	typeNum Type, descr *ColumnDescriptor,
+func NewPlainEncoder(descr *ColumnDescriptor,
 	pool memory.Allocator) (Encoder, error) {
 
-	switch typeNum {
+	switch descr.PhysicalType() {
 	// case Type_INT32:
 	// return NewInt32PlainEncoder(descr, pool)
 	case Type_INT64:
-		return NewInt64PlainEncoder(descr, pool)
+		return NewInt64PlainEncoder(Int64EncodingTraits, descr, pool)
 	default:
 		return nil, fmt.Errorf(
 			"plain encoder for %s not implemented: %w",
-			TypeToString(typeNum),
+			TypeToString(descr.PhysicalType()),
 			ParquetNYIException,
 		)
 	}
 }
 
 // TODO: Remove this?
-func NewTypedDecoder(
-	dtype PhysicalType, encoding EncodingType,
-	descr *ColumnDescriptor) (TypedDecoder, error) {
-	decoder, err := NewDecoder(dtype.typeNum(), encoding, descr)
+func NewTypedDecoder(encoding EncodingType,
+	descr *ColumnDescriptor) (TypedDecoderInterface, error) {
+
+	decoder, err := NewDecoder(encoding, descr)
 	if err != nil {
 		return nil, err
 	}
-	return decoder.(TypedDecoder), nil
+	return decoder.(TypedDecoderInterface), nil
 }
 
 func NewDecoder(
-	typeNum Type, encoding EncodingType,
-	descr *ColumnDescriptor) (Decoder, error) {
+	encoding EncodingType, descr *ColumnDescriptor) (Decoder, error) {
 
 	if encoding != EncodingType_PLAIN {
 		return nil, fmt.Errorf(
@@ -957,28 +1021,28 @@ func NewDecoder(
 		)
 	}
 
-	return NewPlainDecoder(typeNum, descr)
+	return NewPlainDecoder(descr)
 }
 
-func NewPlainDecoder(typeNum Type, descr *ColumnDescriptor) (Decoder, error) {
-	switch typeNum {
+func NewPlainDecoder(descr *ColumnDescriptor) (Decoder, error) {
+	switch descr.PhysicalType() {
 	// case Type_INT32:
 	// return NewInt32PlainDecoder(descr, pool)
 	case Type_INT64:
-		return NewInt64PlainDecoder(descr)
+		return NewInt64PlainDecoder(Int64EncodingTraits, descr)
 	default:
 		return nil, fmt.Errorf(
 			"plain decoder for %s not implemented: %w",
-			TypeToString(typeNum),
+			TypeToString(descr.PhysicalType()),
 			ParquetNYIException,
 		)
 	}
 }
 
 func NewDictDecoder(
-	typeNum Type, descr *ColumnDescriptor, pool memory.Allocator) (DictDecoder, error) {
+	descr *ColumnDescriptor, pool memory.Allocator) (DictDecoder, error) {
 
-	switch typeNum {
+	switch descr.PhysicalType() {
 	case Type_BOOLEAN:
 		return nil, fmt.Errorf(
 			"Dictionary decoding not implemented for boolean type: %w",
@@ -987,7 +1051,7 @@ func NewDictDecoder(
 	// case Type_INT32:
 	// return NewInt32DictDecoder(descr, pool)
 	case Type_INT64:
-		return NewInt64DictDecoder(descr, pool)
+		return NewInt64DictDecoder(Int64EncodingTraits, descr, pool)
 	// case Type_INT96:
 	// return NewInt96DictDecoder(descr, pool)
 	// case Type_FLOAT:
@@ -1001,7 +1065,7 @@ func NewDictDecoder(
 	default:
 		return nil, fmt.Errorf(
 			"dict decoder for %s not implemented: %w",
-			TypeToString(typeNum),
+			TypeToString(descr.PhysicalType()),
 			ParquetNYIException,
 		)
 	}
@@ -1009,16 +1073,16 @@ func NewDictDecoder(
 
 var (
 	// Encoder
-	_ Encoder      = (*Int64PlainEncoder)(nil)
-	_ PlainEncoder = (*Int64PlainEncoder)(nil)
-	_ TypedEncoder = (*Int64PlainEncoder)(nil)
+	_ Encoder               = (*Int64PlainEncoder)(nil)
+	_ PlainEncoder          = (*Int64PlainEncoder)(nil)
+	_ TypedEncoderInterface = (*Int64PlainEncoder)(nil)
 
 	// Decoder
 	_ Decoder = (*Int64PlainDecoder)(nil)
 	// _ PlainDecoder = (*Int64PlainDecoder)(nil)
-	_ TypedDecoder = (*Int64PlainDecoder)(nil)
+	_ TypedDecoderInterface = (*Int64PlainDecoder)(nil)
 
-	_ Decoder      = (*Int64DictDecoder)(nil)
-	_ TypedDecoder = (*Int64DictDecoder)(nil)
-	_ DictDecoder  = (*Int64DictDecoder)(nil)
+	_ Decoder               = (*Int64DictDecoder)(nil)
+	_ TypedDecoderInterface = (*Int64DictDecoder)(nil)
+	_ DictDecoder           = (*Int64DictDecoder)(nil)
 )
