@@ -430,7 +430,7 @@ func (d *RleDecoder) GetBatchSpaced(batchSize int, nullCount int, validBits []by
 					bitReader.Next()
 				}
 				// fill(outSlice, outOffset, repeatBatch, d.currentValue)
-				outSlice.ElementsFillBytes(outOffset, repeatBatch, d.currentValue[:])
+				outSlice.ElementsFillBytes(outOffset, outOffset+repeatBatch, d.currentValue[:])
 				// rOut = sliceFromOffset(rOut, repeatBatch)
 				outOffset += repeatBatch
 				valuesRead += repeatBatch
@@ -443,7 +443,8 @@ func (d *RleDecoder) GetBatchSpaced(batchSize int, nullCount int, validBits []by
 				// actualRead := d.bitReader.GetBatch(d.bitWidth, indicies[:], literalBatch)
 				// indicies := reflect.MakeSlice(reflect.TypeOf(out), kBufferSize, kBufferSize)
 				// indicies := bytearray.Make(outSlice.ElementSize(), kBufferSize, kBufferSize)
-				indicies := bytearray.NewByteArray(make([]byte, outSlice.ElementSize()*kBufferSize), kBufferSize)
+				iBuf := make([]byte, outSlice.ElementSize()*kBufferSize)
+				indicies := bytearray.NewByteArray(iBuf, outSlice.ElementSize())
 
 				literalBatch = util.MinInt(literalBatch, kBufferSize)
 				// actualRead := d.bitReader.GetBatch(d.bitWidth, indicies.Interface(), literalBatch)

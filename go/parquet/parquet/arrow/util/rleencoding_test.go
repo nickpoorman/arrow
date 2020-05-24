@@ -193,6 +193,8 @@ func ValidateRle(t *testing.T, values []int, bitWidth int, expectedEncoding []by
 		testutil.AssertBitsEq(t, buffer[:encodedLen], expectedEncoding[:encodedLen])
 	}
 
+	singleElementSizeBytes := int(bytearray.BytesForBits(int64(bitWidth)))
+
 	// Verify read
 	{
 		decoder := NewRleDecoder(buffer, length, bitWidth)
@@ -201,10 +203,10 @@ func ValidateRle(t *testing.T, values []int, bitWidth int, expectedEncoding []by
 			debug.Print("\nloop i: %d - looking for: %d\n", i, values[i])
 			var v uint64
 			// var valBuf [8]byte
-			debug.Print("need buffer of size bytes: %d", int(bytearray.BytesForBits(int64(bitWidth))))
-			valBuf := make([]byte, int(bytearray.BytesForBits(int64(bitWidth))))
+			debug.Print("need buffer of size bytes: %d", singleElementSizeBytes)
+			valBuf := make([]byte, singleElementSizeBytes)
 			result := decoder.Get(valBuf[:])
-			bytearray.NewByteArray(valBuf[:], int(bytearray.BytesForBits(int64(bitWidth)))).ReadInto(&v)
+			bytearray.NewByteArray(valBuf[:], singleElementSizeBytes).ReadInto(&v)
 			testutil.AssertTrue(t, result)
 			testutil.AssertEqInt(t, int(v), values[i])
 			final = append(final, int(v))
@@ -217,14 +219,14 @@ func ValidateRle(t *testing.T, values []int, bitWidth int, expectedEncoding []by
 	{
 		decoder := NewRleDecoder(buffer, length, bitWidth)
 		// buf := make([]byte, intSize*len(values))
-		valBuf := make([]byte, int(bytearray.BytesForBits(int64(bitWidth)))*len(values))
+		valBuf := make([]byte, singleElementSizeBytes*len(values))
 
 		result := decoder.GetBatch(valBuf, len(values))
 		debug.Print("GetBatch result: %d | len(values): %d", result, len(values))
 		testutil.AssertEqInt(t, len(values), result)
 
 		valuesRead := make([]int, len(values))
-		valBufWrapper := bytearray.NewByteArray(valBuf, int(bytearray.BytesForBits(int64(bitWidth))))
+		valBufWrapper := bytearray.NewByteArray(valBuf, singleElementSizeBytes)
 		valBufWrapper.ReadInto(valuesRead)
 		// testutil.AssertDeepEq(t, valuesRead, values)
 		if !reflect.DeepEqual(valuesRead, values) {
@@ -246,14 +248,17 @@ func CheckRoundTrip(t *testing.T, values []int, bitWidth int) bool {
 		}
 	}
 	encodedLen := encoder.Flush()
+
+	singleElementSizeBytes := int(bytearray.BytesForBits(int64(bitWidth)))
+
 	var oV int
-	var out [intSize]byte
-	outBA := bytearray.NewByteArray(out[:], intSize)
+	out := make([]byte, singleElementSizeBytes)
+	outBA := bytearray.NewByteArray(out, singleElementSizeBytes)
 
 	{
 		decoder := NewRleDecoder(buffer, encodedLen, bitWidth)
 		for i := 0; i < len(values); i++ {
-			testutil.AssertTrue(t, decoder.Get(out[:]))
+			testutil.AssertTrue(t, decoder.Get(out))
 			outBA.ReadInto(&oV)
 			if values[i] != oV {
 				return false
@@ -264,10 +269,12 @@ func CheckRoundTrip(t *testing.T, values []int, bitWidth int) bool {
 	// Verify batch read
 	{
 		decoder := NewRleDecoder(buffer, encodedLen, bitWidth)
-		valuesReadBA := bytearray.NewByteArray(make([]byte, intSize*len(values)), intSize)
-		if len(values) != decoder.GetBatch(valuesReadBA.Bytes(), len(values)) {
+		buf := make([]byte, singleElementSizeBytes*len(values))
+		if len(values) != decoder.GetBatch(buf, len(values)) {
 			return false
 		}
+
+		valuesReadBA := bytearray.NewByteArray(buf, singleElementSizeBytes)
 		valuesRead := make([]int, len(values))
 		valuesReadBA.ReadInto(valuesRead)
 
@@ -577,10 +584,11 @@ func CheckRoundTripSpacedInt32(t *testing.T, data *array.Int32, bitWidth int) {
 	}
 	encodedSize := encoder.Flush()
 
+	singleElementSizeBytes := int(bytearray.BytesForBits(int64(bitWidth)))
+
 	// Verify batch read
 	decoder := NewRleDecoder(buffer, encodedSize, bitWidth)
-	valuesRead := make([]int32, numValues)
-	valuesReadBa := bytearray.NewByteArray(make([]byte, 4*numValues), numValues)
+	buf := make([]byte, singleElementSizeBytes*numValues)
 
 	debug.Print("numValues: %+v", numValues)
 	testutil.AssertEqInt(t,
@@ -589,11 +597,13 @@ func CheckRoundTripSpacedInt32(t *testing.T, data *array.Int32, bitWidth int) {
 			data.NullN(),
 			data.NullBitmapBytes(),
 			int64(data.Offset()),
-			valuesReadBa.Bytes(),
+			buf,
 		),
 		numValues)
 
-	valuesReadBa.ReadInto(valuesRead)
+	valuesReadBA := bytearray.NewByteArray(buf, singleElementSizeBytes)
+	valuesRead := make([]int32, numValues)
+	valuesReadBA.ReadInto(valuesRead)
 
 	for i := 0; i < numValues; i++ {
 		// debug.Print("Index %d | isValid: %t\n", i, data.IsValid(i))
@@ -618,8 +628,8 @@ func TestRleDecoderGetBatchSpaced(t *testing.T) {
 		{1, 100000, 0.01, 1},
 		{1, 100000, 0.1, 1},
 		{1, 100000, 0.5, 1},
-		{4, 100000, 0.05, 3}, // TODO: Figure out why this case fails.
-		// {100, 100000, 0.05, 7},
+		{4, 100000, 0.05, 3},
+		{100, 100000, 0.05, 7},
 	}
 	for _, c := range int32Cases {
 		arr := rd.Int32(int(c.size), 0 /*min=*/, c.maxValue, c.nullProbability, mem)
@@ -646,8 +656,8 @@ func TestRleDecoderGetBatchSpacedSpecific(t *testing.T) {
 		{1, 100000, 0.01, 1},
 		{1, 100000, 0.1, 1},
 		{1, 100000, 0.5, 1},
-		{4, 100000, 0.05, 3}, // TODO: Figure out why this case fails.
-		// {100, 100000, 0.05, 7},
+		{4, 100000, 0.05, 3},
+		{100, 100000, 0.05, 7},
 	}
 	for _, c := range int32Cases {
 		arr := rd.Int32(int(c.size) /*min=*/, 0, c.maxValue, c.nullProbability, mem)
