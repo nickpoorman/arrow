@@ -66,8 +66,10 @@ func (c *GzipCompressor) Compress(buf []byte) []byte {
 }
 
 func (c *GzipCompressor) Uncompress(buf []byte) ([]byte, error) {
-	rbuf := bytes.NewReader(buf)
-	gzipReader, _ := gzip.NewReader(rbuf)
-	res, err := ioutil.ReadAll(gzipReader)
-	return res, err
+	gzipReader, err := gzip.NewReader(bytes.NewReader(buf))
+	if err != nil {
+		return nil, err
+	}
+	defer gzipReader.Close()
+	return ioutil.ReadAll(gzipReader)
 }

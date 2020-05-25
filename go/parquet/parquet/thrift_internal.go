@@ -117,3 +117,8 @@ func StatisticsToThrift(stats EncodedStatistics) parquet.Statistics {
 // Thrift struct serialization / deserialization utilities
 
 // TODO: Implement the rest of thrift_internal.h
+
+func DeserializeThriftMsg(buf []byte, len *uint32, deserializedMsg parquet.PageHeader,
+	decryptor Decryptor) error {
+	panic("not yet implemented")
+}

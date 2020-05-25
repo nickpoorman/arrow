@@ -10,16 +10,16 @@ import (
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 )
 
-const boolSize = int(unsafe.Sizeof(bool(false)))
-const uint8Size = int(unsafe.Sizeof(uint8(0)))
-const uint16Size = int(unsafe.Sizeof(uint16(0)))
-const uint32Size = int(unsafe.Sizeof(uint32(0)))
-const uint64Size = int(unsafe.Sizeof(uint64(0)))
-const intSize = int(unsafe.Sizeof(int(0)))
-const int8Size = int(unsafe.Sizeof(int8(0)))
-const int16Size = int(unsafe.Sizeof(int16(0)))
-const int32Size = int(unsafe.Sizeof(int32(0)))
-const int64Size = int(unsafe.Sizeof(int64(0)))
+const BoolSize = int(unsafe.Sizeof(bool(false)))
+const Uint8Size = int(unsafe.Sizeof(uint8(0)))
+const Uint16Size = int(unsafe.Sizeof(uint16(0)))
+const Uint32Size = int(unsafe.Sizeof(uint32(0)))
+const Uint64Size = int(unsafe.Sizeof(uint64(0)))
+const IntSize = int(unsafe.Sizeof(int(0)))
+const Int8Size = int(unsafe.Sizeof(int8(0)))
+const Int16Size = int(unsafe.Sizeof(int16(0)))
+const Int32Size = int(unsafe.Sizeof(int32(0)))
+const Int64Size = int(unsafe.Sizeof(int64(0)))
 
 type ByteArray struct {
 	v     []byte
@@ -87,8 +87,8 @@ func (b ByteArray) putUint32AtUint32Offset(offset int, value uint32) {
 }
 
 func (b ByteArray) PutUint64(value uint64) {
-	if len(b.v) < int(uint64Size) {
-		var v [uint64Size]byte
+	if len(b.v) < int(Uint64Size) {
+		var v [Uint64Size]byte
 		binary.LittleEndian.PutUint64(v[:], value)
 		copy(b.v, v[:])
 	} else {
@@ -97,8 +97,8 @@ func (b ByteArray) PutUint64(value uint64) {
 }
 
 func (b ByteArray) PutUint32(value uint32) {
-	if len(b.v) < int(uint32Size) {
-		var v [uint32Size]byte
+	if len(b.v) < int(Uint32Size) {
+		var v [Uint32Size]byte
 		binary.LittleEndian.PutUint32(v[:], value)
 		copy(b.v, v[:])
 	} else {
@@ -154,8 +154,8 @@ func (b ByteArray) Bytes() []byte {
 }
 
 func (b ByteArray) Uint64() uint64 {
-	if len(b.v) < int(uint64Size) {
-		var v [uint64Size]byte
+	if len(b.v) < int(Uint64Size) {
+		var v [Uint64Size]byte
 		copy(v[:], b.v)
 		return binary.LittleEndian.Uint64(v[:])
 	} else {
@@ -164,8 +164,8 @@ func (b ByteArray) Uint64() uint64 {
 }
 
 func (b ByteArray) Uint32() uint32 {
-	if len(b.v) < int(uint32Size) {
-		var v [int(uint32Size)]byte
+	if len(b.v) < int(Uint32Size) {
+		var v [int(Uint32Size)]byte
 		copy(v[:], b.v)
 		return binary.LittleEndian.Uint32(v[:])
 	} else {
@@ -174,8 +174,8 @@ func (b ByteArray) Uint32() uint32 {
 }
 
 func (b ByteArray) Uint16() uint16 {
-	if len(b.v) < int(uint16Size) {
-		var v [int(uint16Size)]byte
+	if len(b.v) < int(Uint16Size) {
+		var v [int(Uint16Size)]byte
 		copy(v[:], b.v)
 		return binary.LittleEndian.Uint16(v[:])
 	} else {
@@ -184,7 +184,7 @@ func (b ByteArray) Uint16() uint16 {
 }
 
 func (b ByteArray) Uint8() uint8 {
-	if len(b.v) < int(uint8Size) {
+	if len(b.v) < int(Uint8Size) {
 		return 0
 	} else {
 		return b.v[0]
@@ -385,8 +385,8 @@ func BoolCastToBytes(b []bool) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * boolSize
-	s.Cap = h.Cap * boolSize
+	s.Len = h.Len * BoolSize
+	s.Cap = h.Cap * BoolSize
 
 	return res
 }
@@ -397,8 +397,8 @@ func Uint8CastToBytes(b []uint8) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * uint8Size
-	s.Cap = h.Cap * uint8Size
+	s.Len = h.Len * Uint8Size
+	s.Cap = h.Cap * Uint8Size
 
 	return res
 }
@@ -409,8 +409,8 @@ func Uint16CastToBytes(b []uint16) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * uint16Size
-	s.Cap = h.Cap * uint16Size
+	s.Len = h.Len * Uint16Size
+	s.Cap = h.Cap * Uint16Size
 
 	return res
 }
@@ -421,8 +421,8 @@ func Uint32CastToBytes(b []uint32) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * uint32Size
-	s.Cap = h.Cap * uint32Size
+	s.Len = h.Len * Uint32Size
+	s.Cap = h.Cap * Uint32Size
 
 	return res
 }
@@ -433,8 +433,8 @@ func Uint64CastToBytes(b []uint64) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * uint64Size
-	s.Cap = h.Cap * uint64Size
+	s.Len = h.Len * Uint64Size
+	s.Cap = h.Cap * Uint64Size
 
 	return res
 }
@@ -445,8 +445,8 @@ func Int8CastToBytes(b []int8) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * int8Size
-	s.Cap = h.Cap * int8Size
+	s.Len = h.Len * Int8Size
+	s.Cap = h.Cap * Int8Size
 
 	return res
 }
@@ -457,8 +457,8 @@ func Int16CastToBytes(b []int16) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * int16Size
-	s.Cap = h.Cap * int16Size
+	s.Len = h.Len * Int16Size
+	s.Cap = h.Cap * Int16Size
 
 	return res
 }
@@ -469,8 +469,8 @@ func Int32CastToBytes(b []int32) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * int32Size
-	s.Cap = h.Cap * int32Size
+	s.Len = h.Len * Int32Size
+	s.Cap = h.Cap * Int32Size
 
 	return res
 }
@@ -481,8 +481,8 @@ func Int64CastToBytes(b []int64) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * int64Size
-	s.Cap = h.Cap * int64Size
+	s.Len = h.Len * Int64Size
+	s.Cap = h.Cap * Int64Size
 
 	return res
 }
@@ -493,8 +493,8 @@ func IntCastToBytes(b []int) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * intSize
-	s.Cap = h.Cap * intSize
+	s.Len = h.Len * IntSize
+	s.Cap = h.Cap * IntSize
 
 	return res
 }
@@ -505,8 +505,8 @@ func Float32CastToBytes(b []float32) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * uint32Size
-	s.Cap = h.Cap * uint32Size
+	s.Len = h.Len * Uint32Size
+	s.Cap = h.Cap * Uint32Size
 
 	return res
 }
@@ -517,8 +517,8 @@ func Float64CastToBytes(b []float64) []byte {
 	var res []byte
 	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
 	s.Data = h.Data
-	s.Len = h.Len * uint64Size
-	s.Cap = h.Cap * uint64Size
+	s.Len = h.Len * Uint64Size
+	s.Cap = h.Cap * Uint64Size
 
 	return res
 }
