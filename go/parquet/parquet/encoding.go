@@ -190,11 +190,18 @@ func (e encoderBase) MemoryPool() memory.Allocator { return e.pool }
 // ----------------------------------------------------------------------
 // PlainEncoder<T> implementations
 
+type bufferBuilderInterface interface {
+	Len() int
+	Finish() *memory.Buffer
+	Append([]byte)
+}
+
 type Int64PlainEncoder struct {
 	encoderBase
 
 	// base
-	sink *array.Int64BufferBuilder
+	// sink *array.Int64BufferBuilder
+	sink bufferBuilderInterface
 }
 
 func NewInt64PlainEncoder(
@@ -219,7 +226,8 @@ func (e *Int64PlainEncoder) FlushValues() *memory.Buffer {
 func (e *Int64PlainEncoder) Put(src interface{}, numValues int) error {
 	switch v := src.(type) {
 	case []int64:
-		return e.PutValues(v)
+		e.sink.(*array.Int64BufferBuilder).AppendValues(v)
+		return nil
 	case []byte:
 		return e.PutBuffer(v)
 	default:
@@ -260,11 +268,6 @@ func (e *Int64PlainEncoder) PutArrowArray(values array.Interface) error {
 	return nil
 }
 
-func (e *Int64PlainEncoder) PutValues(values []int64) error {
-	e.sink.AppendValues(values)
-	return nil
-}
-
 func (e *Int64PlainEncoder) PutBuffer(buffer []byte) error {
 	e.sink.Append(buffer)
 	return nil
@@ -273,24 +276,26 @@ func (e *Int64PlainEncoder) PutBuffer(buffer []byte) error {
 func (e *Int64PlainEncoder) PutSpaced(
 	src interface{}, validBits []byte, validBitsOffset int) error {
 
-	vals, ok := src.([]int64)
-	if !ok {
+	switch v := src.(type) {
+	case []int64:
+		return e.putSpacedValuesInt64(v, validBits, validBitsOffset)
+	default:
 		return fmt.Errorf(
 			"PutSpaced: to %s from %T not supported",
 			arrow.INT64.String(),
 			src,
 		)
 	}
-
-	return e.PutSpacedValues(vals, validBits, validBitsOffset)
 }
 
-func (e *Int64PlainEncoder) PutSpacedValues(
+// TODO: Add the other types...
+func (e *Int64PlainEncoder) putSpacedValuesInt64(
 	src []int64, validBits []byte,
 	validBitsOffset int) error {
 	numValues := len(src)
 
 	buffer := memory.NewResizableBuffer(e.MemoryPool())
+	defer buffer.Release()
 	buffer.Resize(arrow.Int64Traits.BytesRequired(numValues))
 
 	numValidValues := 0
@@ -305,7 +310,7 @@ func (e *Int64PlainEncoder) PutSpacedValues(
 		}
 		validBitsReader.Next()
 	}
-	return e.PutValues(data[:numValidValues])
+	return e.PutBuffer(arrow.Int64Traits.CastToBytes(data[:numValidValues]))
 }
 
 // ----------------------------------------------------------------------

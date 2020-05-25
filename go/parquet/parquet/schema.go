@@ -877,6 +877,10 @@ func (cd *ColumnDescriptor) path() ColumnPath {
 	return cd.PrimitiveNode.path()
 }
 
+func (cd *ColumnDescriptor) schemaNode() Node {
+	return cd.Node
+}
+
 func (cd *ColumnDescriptor) ToString() (string, error) {
 	var b strings.Builder
 	fmt.Fprint(&b, "column descriptor = {\n")

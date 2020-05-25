@@ -107,7 +107,7 @@ func (br *BitmapWriter) Finish() {
 	}
 }
 
-func (br *BitmapWriter) position() int { return br.position_ }
+func (br *BitmapWriter) Position() int { return br.position_ }
 
 // -------------
 
