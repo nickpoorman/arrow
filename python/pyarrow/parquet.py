@@ -35,10 +35,9 @@ from pyarrow._parquet import (ParquetReader, Statistics,  # noqa
                               FileMetaData, RowGroupMetaData,
                               ColumnChunkMetaData,
                               ParquetSchema, ColumnSchema)
-from pyarrow.compat import guid
 from pyarrow.filesystem import (LocalFileSystem, _ensure_filesystem,
                                 resolve_filesystem_and_path)
-from pyarrow.util import _is_path_like, _stringify_path
+from pyarrow.util import guid, _is_path_like, _stringify_path
 
 _URI_STRIP_SCHEMES = ('hdfs',)
 
@@ -93,9 +92,9 @@ def _check_filters(filters, check_null_strings=True):
             for conjunction in filters:
                 for col, op, val in conjunction:
                     if (
-                        isinstance(val, list)
-                        and all(_check_contains_null(v) for v in val)
-                        or _check_contains_null(val)
+                        isinstance(val, list) and
+                        all(_check_contains_null(v) for v in val) or
+                        _check_contains_null(val)
                     ):
                         raise NotImplementedError(
                             "Null-terminated binary strings are not supported "
@@ -192,6 +191,7 @@ class ParquetFile:
         If positive, perform read buffering when deserializing individual
         column chunks. Otherwise IO calls are unbuffered.
     """
+
     def __init__(self, source, metadata=None, common_metadata=None,
                  read_dictionary=None, memory_map=False, buffer_size=0):
         self.reader = ParquetReader()
@@ -438,7 +438,13 @@ use_deprecated_int96_timestamps : bool, default None
     Write timestamps to INT96 Parquet format. Defaults to False unless enabled
     by flavor argument. This take priority over the coerce_timestamps option.
 coerce_timestamps : str, default None
-    Cast timestamps a particular resolution.
+    Cast timestamps a particular resolution. The defaults depends on `version`.
+    For ``version='1.0'`` (the default), nanoseconds will be cast to
+    microseconds ('us'), and seconds to milliseconds ('ms') by default. For
+    ``version='2.0'``, the original resolution is preserved and no casting
+    is done by default. The casting might result in loss of data, in which
+    case ``allow_truncated_timestamps=True`` can be used to suppress the
+    raised exception.
     Valid values: {None, 'ms', 'us'}
 data_page_size : int, default None
     Set a target threshold for the approximate encoded size of data
@@ -619,6 +625,7 @@ class ParquetDatasetPiece:
     row_group : int, default None
         Row group to load. By default, reads all row groups.
     """
+
     def __init__(self, path, open_file_func=partial(open, mode='rb'),
                  file_options=None, row_group=None, partition_keys=None):
         self.path = _stringify_path(path)
@@ -1366,6 +1373,7 @@ class _ParquetDatasetV2:
     """
     ParquetDataset shim using the Dataset API under the hood.
     """
+
     def __init__(self, path_or_paths, filesystem=None, filters=None,
                  partitioning="hive", read_dictionary=None, buffer_size=None,
                  memory_map=False, **kwargs):
@@ -1488,6 +1496,9 @@ use_threads : bool, default True
 metadata : FileMetaData
     If separately computed
 {1}
+filesystem : FileSystem, default None
+    If nothing passed, paths assumed to be found in the local on-disk
+    filesystem.
 filters : List[Tuple] or List[List[Tuple]] or None (default)
     Rows which do not match the filter predicate will be removed from scanned
     data. Partition keys embedded in a nested directory structure will be
@@ -1739,32 +1750,52 @@ def write_to_dataset(table, root_path, partition_cols=None,
             metadata_collector[-1].set_file_path(outfile)
 
 
-def write_metadata(schema, where, version='1.0',
-                   use_deprecated_int96_timestamps=False,
-                   coerce_timestamps=None):
+def write_metadata(schema, where, metadata_collector=None, **kwargs):
     """
-    Write metadata-only Parquet file from schema.
+    Write metadata-only Parquet file from schema. This can be used with
+    `write_to_dataset` to generate `_common_metadata` and `_metadata` sidecar
+    files.
 
     Parameters
     ----------
     schema : pyarrow.Schema
     where: string or pyarrow.NativeFile
-    version : {"1.0", "2.0"}, default "1.0"
-        The Parquet format version, defaults to 1.0.
-    use_deprecated_int96_timestamps : bool, default False
-        Write nanosecond resolution timestamps to INT96 Parquet format.
-    coerce_timestamps : str, default None
-        Cast timestamps a particular resolution.
-        Valid values: {None, 'ms', 'us'}.
-    filesystem : FileSystem, default None
-        If nothing passed, paths assumed to be found in the local on-disk
-        filesystem.
+    metadata_collector:
+    **kwargs : dict,
+        Additional kwargs for ParquetWriter class. See docstring for
+        `ParquetWriter` for more information.
+
+    Examples
+    --------
+
+    Write a dataset and collect metadata information.
+
+    >>> metadata_collector = []
+    >>> write_to_dataset(
+    ...     table, root_path,
+    ...     metadata_collector=metadata_collector, **writer_kwargs)
+
+    Write the `_common_metadata` parquet file without row groups statistics.
+
+    >>> write_metadata(
+    ...     table.schema, root_path / '_common_metadata', **writer_kwargs)
+
+    Write the `_metadata` parquet file with row groups statistics.
+
+    >>> write_metadata(
+    ...     table.schema, root_path / '_metadata',
+    ...     metadata_collector=metadata_collector, **writer_kwargs)
     """
-    writer = ParquetWriter(
-        where, schema, version=version,
-        use_deprecated_int96_timestamps=use_deprecated_int96_timestamps,
-        coerce_timestamps=coerce_timestamps)
+    writer = ParquetWriter(where, schema, **kwargs)
     writer.close()
+
+    if metadata_collector is not None:
+        # ParquetWriter doesn't expose the metadata until it's written. Write
+        # it and read it again.
+        metadata = read_metadata(where)
+        for m in metadata_collector:
+            metadata.append_row_groups(m)
+        metadata.write_metadata_file(where)
 
 
 def read_metadata(where, memory_map=False):

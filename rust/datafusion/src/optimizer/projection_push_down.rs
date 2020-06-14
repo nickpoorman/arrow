@@ -114,9 +114,26 @@ impl ProjectionPushDown {
                     projection: Some(projection),
                 })
             }
+            LogicalPlan::InMemoryScan {
+                data,
+                schema,
+                projection,
+                ..
+            } => {
+                let (projection, projected_schema) =
+                    get_projected_schema(&schema, projection, accum, mapping)?;
+
+                Ok(LogicalPlan::InMemoryScan {
+                    data: data.clone(),
+                    schema: schema.clone(),
+                    projection: Some(projection),
+                    projected_schema: Box::new(projected_schema),
+                })
+            }
             LogicalPlan::CsvScan {
                 path,
                 has_header,
+                delimiter,
                 schema,
                 projection,
                 ..
@@ -128,6 +145,7 @@ impl ProjectionPushDown {
                     path: path.to_owned(),
                     has_header: *has_header,
                     schema: schema.clone(),
+                    delimiter: *delimiter,
                     projection: Some(projection),
                     projected_schema: Box::new(projected_schema),
                 })
@@ -160,13 +178,13 @@ impl ProjectionPushDown {
                 name,
                 location,
                 file_type,
-                header_row,
+                has_header,
             } => Ok(LogicalPlan::CreateExternalTable {
                 schema: schema.clone(),
                 name: name.to_string(),
                 location: location.to_string(),
                 file_type: file_type.clone(),
-                header_row: *header_row,
+                has_header: *has_header,
             }),
         }
     }
@@ -190,7 +208,8 @@ impl ProjectionPushDown {
             )),
             Expr::Column(i) => Ok(Expr::Column(self.new_index(mapping, i)?)),
             Expr::UnresolvedColumn(_) => Err(ExecutionError::ExecutionError(
-                "Columns need to be resolved before this rule can run".to_owned(),
+                "Columns need to be resolved before projection push down rule can run"
+                    .to_owned(),
             )),
             Expr::Literal(_) => Ok(expr.clone()),
             Expr::Not(e) => Ok(Expr::Not(Box::new(self.rewrite_expr(e, mapping)?))),

@@ -20,6 +20,11 @@
 #include "./arrow_types.h"
 
 #if defined(ARROW_R_WITH_ARROW)
+#include <arrow/array/array_base.h>
+#include <arrow/builder.h>
+#include <arrow/table.h>
+#include <arrow/util/bitmap_writer.h>
+#include <arrow/visitor_inline.h>
 
 using arrow::internal::checked_cast;
 

@@ -172,7 +172,14 @@ Status UnionFromFlatbuffer(const flatbuf::Union* union_data,
     }
   }
 
-  return UnionType::Make(children, type_codes, mode).Value(out);
+  if (mode == UnionMode::SPARSE) {
+    ARROW_ASSIGN_OR_RAISE(
+        *out, SparseUnionType::Make(std::move(children), std::move(type_codes)));
+  } else {
+    ARROW_ASSIGN_OR_RAISE(
+        *out, DenseUnionType::Make(std::move(children), std::move(type_codes)));
+  }
+  return Status::OK();
 }
 
 #define INT_TO_FB_CASE(BIT_WIDTH, IS_SIGNED)            \
@@ -660,6 +667,10 @@ class FieldToFlatbufferVisitor {
           checked_cast<const ExtensionType&>(*storage_type).storage_type().get();
     }
     if (storage_type->id() == Type::DICTIONARY) {
+      // Note we're emitting the dictionary encoding after potentially
+      // emitting any nested dictionaries in VisitType() above,
+      // so the outer dictionaries will naturally get an id larger than any
+      // inner dictionaries.
       RETURN_NOT_OK(GetDictionaryEncoding(
           fbb_, field, checked_cast<const DictionaryType&>(*storage_type),
           dictionary_memo_, &dictionary));

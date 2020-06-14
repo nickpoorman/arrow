@@ -36,7 +36,7 @@ use crate::error::{ArrowError, Result};
 /// serialization and computation functions, possibly incremental.  
 /// See also [CSV reader](crate::csv::Reader) and
 /// [JSON reader](crate::json::Reader).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RecordBatch {
     schema: Arc<Schema>,
     columns: Vec<Arc<Array>>,
@@ -84,9 +84,11 @@ impl RecordBatch {
         }
         // check that number of fields in schema match column length
         if schema.fields().len() != columns.len() {
-            return Err(ArrowError::InvalidArgumentError(
-                "number of columns must match number of fields in schema".to_string(),
-            ));
+            return Err(ArrowError::InvalidArgumentError(format!(
+                "number of columns({}) must match number of fields({}) in schema",
+                columns.len(),
+                schema.fields().len(),
+            )));
         }
         // check that all columns have the same row count, and match the schema
         let len = columns[0].data().len();

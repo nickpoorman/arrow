@@ -24,7 +24,8 @@
 
 namespace arrow {
 namespace internal {
-namespace detail {
+
+namespace {
 
 struct StringToFloatConverterImpl {
   StringToFloatConverterImpl()
@@ -45,6 +46,12 @@ struct StringToFloatConverterImpl {
 };
 
 static const StringToFloatConverterImpl g_string_to_float;
+
+// Older clang versions need an explicit implementation definition.
+constexpr double StringToFloatConverterImpl::main_junk_value_;
+constexpr double StringToFloatConverterImpl::fallback_junk_value_;
+
+}  // namespace
 
 bool StringToFloat(const char* s, size_t length, float* out) {
   int processed_length;
@@ -79,10 +86,10 @@ bool StringToFloat(const char* s, size_t length, double* out) {
   return true;
 }
 
-}  // namespace detail
-
 // ----------------------------------------------------------------------
 // strptime-like parsing
+
+namespace {
 
 class StrptimeTimestampParser : public TimestampParser {
  public:
@@ -94,6 +101,10 @@ class StrptimeTimestampParser : public TimestampParser {
                                   /*ignore_time_in_day=*/false,
                                   /*allow_trailing_chars=*/false, out_unit, out);
   }
+
+  const char* kind() const override { return "strptime"; }
+
+  const char* format() const override { return format_.c_str(); }
 
  private:
   std::string format_;
@@ -107,9 +118,14 @@ class ISO8601Parser : public TimestampParser {
                   int64_t* out) const override {
     return ParseTimestampISO8601(s, length, out_unit, out);
   }
+
+  const char* kind() const override { return "iso8601"; }
 };
 
+}  // namespace
 }  // namespace internal
+
+const char* TimestampParser::format() const { return ""; }
 
 std::shared_ptr<TimestampParser> TimestampParser::MakeStrptime(std::string format) {
   return std::make_shared<internal::StrptimeTimestampParser>(std::move(format));

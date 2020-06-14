@@ -102,6 +102,9 @@ build_type = click.Choice(["debug", "relwithdebinfo", "release"],
 warn_level_type = click.Choice(["everything", "checkin", "production"],
                                case_sensitive=False)
 
+simd_level = click.Choice(["NONE", "SSE4_2", "AVX2", "AVX512"],
+                          case_sensitive=True)
+
 
 def cpp_toolchain_options(cmd):
     options = [
@@ -133,6 +136,8 @@ def _apply_options(cmd, options):
               help="Controls compiler warnings -W(no-)error.")
 @click.option("--use-gold-linker", default=True, type=BOOL,
               help="Toggles ARROW_USE_LD_GOLD option.")
+@click.option("--simd-level", default="SSE4_2", type=simd_level,
+              help="Toggles ARROW_SIMD_LEVEL option.")
 # Tests and benchmarks
 @click.option("--with-tests", default=True, type=BOOL,
               help="Build with tests.")
@@ -258,7 +263,8 @@ lint_checks = [
     LintCheck('clang-tidy', "Lint C++ files with clang-tidy."),
     LintCheck('cpplint', "Lint C++ files with cpplint."),
     LintCheck('iwyu', "Lint changed C++ files with Include-What-You-Use."),
-    LintCheck('flake8', "Lint Python files with flake8."),
+    LintCheck('python',
+              "Format and lint Python files with autopep8 and flake8."),
     LintCheck('numpydoc', "Lint Python files with numpydoc."),
     LintCheck('cmake-format', "Format CMake files with cmake-format.py."),
     LintCheck('rat',
@@ -582,6 +588,8 @@ def _set_default(opt, default):
               help='Include JavaScript in integration tests')
 @click.option('--with-go', type=bool, default=False,
               help='Include Go in integration tests')
+@click.option('--with-rust', type=bool, default=False,
+              help='Include Rust in integration tests')
 @click.option('--write_generated_json', default=False,
               help='Generate test JSON to indicated path')
 @click.option('--run-flight', is_flag=True, default=False,

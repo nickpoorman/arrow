@@ -153,14 +153,13 @@ TEST(TestMessage, LegacyIpcBackwardsCompatibility) {
   auto RoundtripWithOptions = [&](const IpcWriteOptions& arg_options,
                                   std::shared_ptr<Buffer>* out_serialized,
                                   std::unique_ptr<Message>* out) {
-    internal::IpcPayload payload;
-    ASSERT_OK(internal::GetRecordBatchPayload(*batch, arg_options, &payload));
+    IpcPayload payload;
+    ASSERT_OK(GetRecordBatchPayload(*batch, arg_options, &payload));
 
     ASSERT_OK_AND_ASSIGN(auto stream, io::BufferOutputStream::Create(1 << 20));
 
     int32_t metadata_length = -1;
-    ASSERT_OK(
-        internal::WriteIpcPayload(payload, arg_options, stream.get(), &metadata_length));
+    ASSERT_OK(WriteIpcPayload(payload, arg_options, stream.get(), &metadata_length));
 
     ASSERT_OK_AND_ASSIGN(*out_serialized, stream->Finish());
     io::BufferReader io_reader(*out_serialized);
@@ -259,6 +258,29 @@ TEST_F(TestSchemaMetadata, DictionaryFields) {
   }
 }
 
+TEST_F(TestSchemaMetadata, NestedDictionaryFields) {
+  {
+    auto inner_dict_type = dictionary(int8(), int32(), /*ordered=*/true);
+    auto dict_type = dictionary(int16(), list(inner_dict_type));
+
+    Schema schema({field("f0", dict_type)});
+    CheckRoundtrip(schema);
+  }
+  {
+    auto dict_type1 = dictionary(int8(), utf8(), /*ordered=*/true);
+    auto dict_type2 = dictionary(int32(), fixed_size_binary(24));
+    auto dict_type3 = dictionary(int32(), binary());
+    auto dict_type4 = dictionary(int8(), decimal(19, 7));
+
+    auto struct_type1 = struct_({field("s1", dict_type1), field("s2", dict_type2)});
+    auto struct_type2 = struct_({field("s3", dict_type3), field("s4", dict_type4)});
+
+    Schema schema({field("f1", dictionary(int32(), struct_type1)),
+                   field("f2", dictionary(int32(), struct_type2))});
+    CheckRoundtrip(schema);
+  }
+}
+
 TEST_F(TestSchemaMetadata, KeyValueMetadata) {
   auto field_metadata = key_value_metadata({{"key", "value"}});
   auto schema_metadata = key_value_metadata({{"foo", "bar"}, {"bizz", "buzz"}});
@@ -270,13 +292,13 @@ TEST_F(TestSchemaMetadata, KeyValueMetadata) {
   CheckRoundtrip(schema);
 }
 
-#define BATCH_CASES()                                                                   \
-  ::testing::Values(&MakeIntRecordBatch, &MakeListRecordBatch, &MakeNonNullRecordBatch, \
-                    &MakeZeroLengthRecordBatch, &MakeDeeplyNestedList,                  \
-                    &MakeStringTypesRecordBatchWithNulls, &MakeStruct, &MakeUnion,      \
-                    &MakeDictionary, &MakeDates, &MakeTimestamps, &MakeTimes,           \
-                    &MakeFWBinary, &MakeNull, &MakeDecimal, &MakeBooleanBatch,          \
-                    &MakeIntervals, &MakeUuid, &MakeDictExtension)
+#define BATCH_CASES()                                                                    \
+  ::testing::Values(&MakeIntRecordBatch, &MakeListRecordBatch, &MakeNonNullRecordBatch,  \
+                    &MakeZeroLengthRecordBatch, &MakeDeeplyNestedList,                   \
+                    &MakeStringTypesRecordBatchWithNulls, &MakeStruct, &MakeUnion,       \
+                    &MakeDictionary, &MakeNestedDictionary, &MakeDates, &MakeTimestamps, \
+                    &MakeTimes, &MakeFWBinary, &MakeNull, &MakeDecimal,                  \
+                    &MakeBooleanBatch, &MakeIntervals, &MakeUuid, &MakeDictExtension)
 
 static int g_file_number = 0;
 
@@ -607,24 +629,24 @@ TEST_F(TestWriteRecordBatch, SliceTruncatesBuffers) {
   CheckArray(a1);
 
   // Sparse Union
-  auto union_type = union_({field("f0", a0->type())}, {0});
+  auto union_type = sparse_union({field("f0", a0->type())}, {0});
   std::vector<int32_t> type_ids(a0->length());
   std::shared_ptr<Buffer> ids_buffer;
   ASSERT_OK(CopyBufferFromVector(type_ids, default_memory_pool(), &ids_buffer));
-  a1 =
-      std::make_shared<UnionArray>(union_type, a0->length(), struct_children, ids_buffer);
+  a1 = std::make_shared<SparseUnionArray>(union_type, a0->length(), struct_children,
+                                          ids_buffer);
   CheckArray(a1);
 
   // Dense union
-  auto dense_union_type = union_({field("f0", a0->type())}, {0}, UnionMode::DENSE);
+  auto dense_union_type = dense_union({field("f0", a0->type())}, {0});
   std::vector<int32_t> type_offsets;
   for (int32_t i = 0; i < a0->length(); ++i) {
     type_offsets.push_back(i);
   }
   std::shared_ptr<Buffer> offsets_buffer;
   ASSERT_OK(CopyBufferFromVector(type_offsets, default_memory_pool(), &offsets_buffer));
-  a1 = std::make_shared<UnionArray>(dense_union_type, a0->length(), struct_children,
-                                    ids_buffer, offsets_buffer);
+  a1 = std::make_shared<DenseUnionArray>(dense_union_type, a0->length(), struct_children,
+                                         ids_buffer, offsets_buffer);
   CheckArray(a1);
 }
 
@@ -657,13 +679,17 @@ TEST_F(TestWriteRecordBatch, RoundtripPreservesBufferSizes) {
 void TestGetRecordBatchSize(const IpcWriteOptions& options,
                             std::shared_ptr<RecordBatch> batch) {
   io::MockOutputStream mock;
+  ipc::IpcPayload payload;
   int32_t mock_metadata_length = -1;
   int64_t mock_body_length = -1;
   int64_t size = -1;
   ASSERT_OK(WriteRecordBatch(*batch, 0, &mock, &mock_metadata_length, &mock_body_length,
                              options));
+  ASSERT_OK(GetRecordBatchPayload(*batch, options, &payload));
+  int64_t payload_size = GetPayloadSize(payload, options);
   ASSERT_OK(GetRecordBatchSize(*batch, options, &size));
   ASSERT_EQ(mock.GetExtentBytesWritten(), size);
+  ASSERT_EQ(mock.GetExtentBytesWritten(), payload_size);
 }
 
 TEST_F(TestWriteRecordBatch, IntegerGetRecordBatchSize) {
@@ -1375,14 +1401,13 @@ void SpliceMessages(std::shared_ptr<Buffer> stream,
     }
 
     IpcWriteOptions options;
-    internal::IpcPayload payload;
+    IpcPayload payload;
     payload.type = msg->type();
     payload.metadata = msg->metadata();
     payload.body_buffers.push_back(msg->body());
     payload.body_length = msg->body()->size();
     int32_t unused_metadata_length = -1;
-    ASSERT_OK(
-        internal::WriteIpcPayload(payload, options, out.get(), &unused_metadata_length));
+    ASSERT_OK(ipc::WriteIpcPayload(payload, options, out.get(), &unused_metadata_length));
   }
   ASSERT_OK_AND_ASSIGN(*spliced_stream, out->Finish());
 }

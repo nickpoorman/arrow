@@ -46,7 +46,7 @@ namespace Apache.Arrow
         public TBuilder Append(ReadOnlySpan<TFrom> span)
         {
             ArrayBuilder.Reserve(span.Length);
-            foreach (var value in span)
+            foreach (TFrom value in span)
             {
                 Append(value);
             }
@@ -105,15 +105,15 @@ namespace Apache.Arrow
     {
         protected TBuilder Instance => this as TBuilder;
         protected ArrowBuffer.Builder<T> ValueBuffer { get; }
-        protected BooleanArray.Builder ValidityBuffer { get; }
+        protected ArrowBuffer.BitmapBuilder ValidityBuffer { get; }
 
         public int Length => ValueBuffer.Length;
-        protected int NullCount { get; set; }
+        protected int NullCount => ValidityBuffer.UnsetBitCount;
 
         internal PrimitiveArrayBuilder()
         {
             ValueBuffer = new ArrowBuffer.Builder<T>();
-            ValidityBuffer = new BooleanArray.Builder();
+            ValidityBuffer = new ArrowBuffer.BitmapBuilder();
         }
 
         public TBuilder Resize(int length)
@@ -139,7 +139,7 @@ namespace Apache.Arrow
 
         public TBuilder Append(ReadOnlySpan<T> span)
         {
-            var len = ValueBuffer.Length;
+            int len = ValueBuffer.Length;
             ValueBuffer.Append(span);
             ValidityBuffer.AppendRange(Enumerable.Repeat(true, ValueBuffer.Length - len));
             return Instance;
@@ -147,7 +147,7 @@ namespace Apache.Arrow
 
         public TBuilder AppendRange(IEnumerable<T> values)
         {
-            var len = ValueBuffer.Length;
+            int len = ValueBuffer.Length;
             ValueBuffer.AppendRange(values);
             ValidityBuffer.AppendRange(Enumerable.Repeat(true, ValueBuffer.Length - len));
             return Instance;
@@ -156,7 +156,6 @@ namespace Apache.Arrow
         public TBuilder AppendNull()
         {
             ValidityBuffer.Append(false);
-            NullCount++;
             ValueBuffer.Append(default(T));
             return Instance;
         }
@@ -177,7 +176,7 @@ namespace Apache.Arrow
 
         public TBuilder Swap(int i, int j)
         {
-            var x = ValueBuffer.Span[i];
+            T x = ValueBuffer.Span[i];
             ValueBuffer.Span[i] = ValueBuffer.Span[j];
             ValueBuffer.Span[j] = x;
             ValidityBuffer.Swap(i, j);
@@ -186,8 +185,8 @@ namespace Apache.Arrow
 
         public TArray Build(MemoryAllocator allocator = default)
         {
-            var validityBuffer = NullCount > 0
-                                    ? ValidityBuffer.Build(allocator).ValueBuffer
+            ArrowBuffer validityBuffer = NullCount > 0
+                                    ? ValidityBuffer.Build(allocator)
                                     : ArrowBuffer.Empty;
 
             return Build(

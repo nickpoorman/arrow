@@ -74,9 +74,12 @@ Status UploadBatchesToFlight(const std::vector<std::shared_ptr<RecordBatch>>& ch
     // Wait for the server to ack the result
     std::shared_ptr<Buffer> ack_metadata;
     RETURN_NOT_OK(metadata_reader.ReadMetadata(&ack_metadata));
-    if (!ack_metadata->Equals(*metadata)) {
-      return Status::Invalid("Expected metadata value: " + metadata->ToString() +
-                             " but got: " + ack_metadata->ToString());
+    if (!ack_metadata) {
+      return Status::Invalid("Expected metadata value: ", metadata->ToString(),
+                             " but got nothing.");
+    } else if (!ack_metadata->Equals(*metadata)) {
+      return Status::Invalid("Expected metadata value: ", metadata->ToString(),
+                             " but got: ", ack_metadata->ToString());
     }
     counter++;
   }
@@ -209,7 +212,8 @@ int main(int argc, char** argv) {
     scenario = std::make_shared<arrow::flight::IntegrationTestScenario>();
   }
 
-  arrow::flight::FlightClientOptions options;
+  arrow::flight::FlightClientOptions options =
+      arrow::flight::FlightClientOptions::Defaults();
   std::unique_ptr<arrow::flight::FlightClient> client;
 
   ABORT_NOT_OK(scenario->MakeClient(&options));

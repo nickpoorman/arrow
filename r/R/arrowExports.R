@@ -272,56 +272,8 @@ Table__cast <- function(table, schema, options){
     .Call(`_arrow_Table__cast` , table, schema, options)
 }
 
-Array__Take <- function(values, indices){
-    .Call(`_arrow_Array__Take` , values, indices)
-}
-
-Array__TakeChunked <- function(values, indices){
-    .Call(`_arrow_Array__TakeChunked` , values, indices)
-}
-
-RecordBatch__Take <- function(batch, indices){
-    .Call(`_arrow_RecordBatch__Take` , batch, indices)
-}
-
-ChunkedArray__Take <- function(values, indices){
-    .Call(`_arrow_ChunkedArray__Take` , values, indices)
-}
-
-ChunkedArray__TakeChunked <- function(values, indices){
-    .Call(`_arrow_ChunkedArray__TakeChunked` , values, indices)
-}
-
-Table__Take <- function(table, indices){
-    .Call(`_arrow_Table__Take` , table, indices)
-}
-
-Table__TakeChunked <- function(table, indices){
-    .Call(`_arrow_Table__TakeChunked` , table, indices)
-}
-
-Array__Filter <- function(values, filter, keep_na){
-    .Call(`_arrow_Array__Filter` , values, filter, keep_na)
-}
-
-RecordBatch__Filter <- function(batch, filter, keep_na){
-    .Call(`_arrow_RecordBatch__Filter` , batch, filter, keep_na)
-}
-
-ChunkedArray__Filter <- function(values, filter, keep_na){
-    .Call(`_arrow_ChunkedArray__Filter` , values, filter, keep_na)
-}
-
-ChunkedArray__FilterChunked <- function(values, filter, keep_na){
-    .Call(`_arrow_ChunkedArray__FilterChunked` , values, filter, keep_na)
-}
-
-Table__Filter <- function(table, filter, keep_na){
-    .Call(`_arrow_Table__Filter` , table, filter, keep_na)
-}
-
-Table__FilterChunked <- function(table, filter, keep_na){
-    .Call(`_arrow_Table__FilterChunked` , table, filter, keep_na)
+compute__CallFunction <- function(func_name, args, options){
+    .Call(`_arrow_compute__CallFunction` , func_name, args, options)
 }
 
 csv___ReadOptions__initialize <- function(options){
@@ -1256,6 +1208,10 @@ RecordBatch__schema <- function(x){
     .Call(`_arrow_RecordBatch__schema` , x)
 }
 
+RecordBatch__ReplaceSchemaMetadata <- function(x, metadata){
+    .Call(`_arrow_RecordBatch__ReplaceSchemaMetadata` , x, metadata)
+}
+
 RecordBatch__columns <- function(batch){
     .Call(`_arrow_RecordBatch__columns` , batch)
 }
@@ -1376,6 +1332,30 @@ ipc___RecordBatchStreamWriter__Open <- function(stream, schema, use_legacy_forma
     .Call(`_arrow_ipc___RecordBatchStreamWriter__Open` , stream, schema, use_legacy_format)
 }
 
+Array__GetScalar <- function(x, i){
+    .Call(`_arrow_Array__GetScalar` , x, i)
+}
+
+Scalar__ToString <- function(s){
+    .Call(`_arrow_Scalar__ToString` , s)
+}
+
+Scalar__CastTo <- function(s, t){
+    .Call(`_arrow_Scalar__CastTo` , s, t)
+}
+
+Scalar__as_vector <- function(scalar){
+    .Call(`_arrow_Scalar__as_vector` , scalar)
+}
+
+Scalar__is_valid <- function(s){
+    .Call(`_arrow_Scalar__is_valid` , s)
+}
+
+Scalar__type <- function(s){
+    .Call(`_arrow_Scalar__type` , s)
+}
+
 schema_ <- function(fields){
     .Call(`_arrow_schema_` , fields)
 }
@@ -1442,6 +1422,10 @@ Table__num_rows <- function(x){
 
 Table__schema <- function(x){
     .Call(`_arrow_Table__schema` , x)
+}
+
+Table__ReplaceSchemaMetadata <- function(x, metadata){
+    .Call(`_arrow_Table__ReplaceSchemaMetadata` , x, metadata)
 }
 
 Table__column <- function(table, i){

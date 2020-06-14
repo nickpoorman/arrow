@@ -45,6 +45,10 @@ class ARROW_EXPORT TimestampParser {
   virtual bool operator()(const char* s, size_t length, TimeUnit::type out_unit,
                           int64_t* out) const = 0;
 
+  virtual const char* kind() const = 0;
+
+  virtual const char* format() const;
+
   /// \brief Create a TimestampParser that recognizes strptime-like format strings
   static std::shared_ptr<TimestampParser> MakeStrptime(std::string format);
 
@@ -54,8 +58,6 @@ class ARROW_EXPORT TimestampParser {
 };
 
 namespace internal {
-
-namespace detail {
 
 template <typename ARROW_TYPE, typename Enable = void>
 struct StringConverter;
@@ -347,6 +349,8 @@ struct StringConverter<Int64Type> : public StringToSignedIntConverterMixin<Int64
   using StringToSignedIntConverterMixin<Int64Type>::StringToSignedIntConverterMixin;
 };
 
+namespace detail {
+
 // Inline-able ISO-8601 parser
 
 using ts_type = TimestampType::c_type;
@@ -458,7 +462,7 @@ static inline bool ParseHH_MM_SS(const char* s, std::chrono::duration<ts_type>* 
 template <typename T, typename ParseContext = void>
 inline bool ParseValue(const char* s, size_t length, typename T::c_type* out,
                        const ParseContext* ctx = NULLPTR) {
-  return detail::StringConverter<T>::Convert(s, length, out);
+  return StringConverter<T>::Convert(s, length, out);
 }
 
 static inline bool ParseTimestampISO8601(const char* s, size_t length,

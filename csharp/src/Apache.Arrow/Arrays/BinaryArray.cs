@@ -56,16 +56,16 @@ namespace Apache.Arrow
             protected TBuilder Instance => this as TBuilder;
             protected ArrowBuffer.Builder<int> ValueOffsets { get; }
             protected ArrowBuffer.Builder<byte> ValueBuffer { get; }
-            protected BooleanArray.Builder ValidityBuffer { get; }
+            protected ArrowBuffer.BitmapBuilder ValidityBuffer { get; }
             protected int Offset { get; set; }
-            protected int NullCount { get; private set; }
+            protected int NullCount => this.ValidityBuffer.UnsetBitCount;
 
             protected BuilderBase(IArrowType dataType)
             {
                 DataType = dataType;
                 ValueOffsets = new ArrowBuffer.Builder<int>();
                 ValueBuffer = new ArrowBuffer.Builder<byte>();
-                ValidityBuffer = new BooleanArray.Builder();
+                ValidityBuffer = new ArrowBuffer.BitmapBuilder();
             }
 
             protected abstract TArray Build(ArrayData data);
@@ -76,8 +76,8 @@ namespace Apache.Arrow
             {
                 ValueOffsets.Append(Offset);
 
-                var validityBuffer = NullCount > 0
-                                        ? ValidityBuffer.Build(allocator).ValueBuffer
+                ArrowBuffer validityBuffer = NullCount > 0
+                                        ? ValidityBuffer.Build(allocator)
                                         : ArrowBuffer.Empty;
 
                 var data = new ArrayData(DataType, ValueOffsets.Length - 1, NullCount, 0,
@@ -90,7 +90,6 @@ namespace Apache.Arrow
             {
                 ValueOffsets.Append(Offset);
                 ValidityBuffer.Append(false);
-                NullCount++;
                 return Instance;
             }
 
@@ -114,14 +113,14 @@ namespace Apache.Arrow
 
             public TBuilder AppendRange(IEnumerable<byte[]> values)
             {
-                foreach (var arr in values)
+                foreach (byte[] arr in values)
                 {
                     if (arr == null)
                     {
                         AppendNull();
                         continue;
                     }
-                    var len = ValueBuffer.Length;
+                    int len = ValueBuffer.Length;
                     ValueOffsets.Append(Offset);
                     ValueBuffer.Append(arr);
                     ValidityBuffer.Append(true);
@@ -137,9 +136,9 @@ namespace Apache.Arrow
                 {
                     return AppendNull();
                 }
-                var len = ValueBuffer.Length;
+                int len = ValueBuffer.Length;
                 ValueBuffer.AppendRange(values);
-                var valOffset = ValueBuffer.Length - len;
+                int valOffset = ValueBuffer.Length - len;
                 ValueOffsets.Append(Offset);
                 Offset += valOffset;
                 ValidityBuffer.Append(true);
@@ -225,7 +224,7 @@ namespace Apache.Arrow
                 return 0;
             }
 
-            var offsets = ValueOffsets;
+            ReadOnlySpan<int> offsets = ValueOffsets;
             return offsets[index + 1] - offsets[index];
         }
 

@@ -29,6 +29,7 @@ import traceback
 from .scenario import Scenario
 from .tester_cpp import CPPTester
 from .tester_go import GoTester
+from .tester_rust import RustTester
 from .tester_java import JavaTester
 from .tester_js import JSTester
 from .util import (ARROW_ROOT_DEFAULT, guid, SKIP_ARROW, SKIP_FLIGHT,
@@ -312,7 +313,7 @@ def get_static_json_files():
 
 
 def run_all_tests(with_cpp=True, with_java=True, with_js=True,
-                  with_go=True, run_flight=False,
+                  with_go=True, with_rust=False, run_flight=False,
                   tempdir=None, **kwargs):
     tempdir = tempdir or tempfile.mkdtemp(prefix='arrow-integration-')
 
@@ -330,6 +331,9 @@ def run_all_tests(with_cpp=True, with_java=True, with_js=True,
     if with_go:
         testers.append(GoTester(**kwargs))
 
+    if with_rust:
+        testers.append(RustTester(**kwargs))
+
     static_json_files = get_static_json_files()
     generated_json_files = datagen.get_generated_json_files(
         tempdir=tempdir,
@@ -342,6 +346,9 @@ def run_all_tests(with_cpp=True, with_java=True, with_js=True,
         Scenario(
             "auth:basic_proto",
             description="Authenticate using the BasicAuth protobuf."),
+        Scenario(
+            "middleware",
+            description="Ensure headers are propagated via middleware."),
     ]
 
     runner = IntegrationRunner(json_files, flight_scenarios, testers, **kwargs)
