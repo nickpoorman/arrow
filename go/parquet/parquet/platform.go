@@ -13,7 +13,7 @@ type ResizableBuffer memory.Buffer
 type ArrowInputFile arrowio.RandomAccessFile
 type ArrowInputStream arrowio.InputStream
 
-const kDefaultOutputStreamSize int64 = 1024
+const kDefaultOutputStreamSize = 1024
 const kNonPageOrdinal int16 = -1
 
 func CreateOutputStream(pool memory.Allocator) *arrowio.BufferOutputStream {

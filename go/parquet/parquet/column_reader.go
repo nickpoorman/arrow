@@ -206,7 +206,8 @@ type SerializedPageReader struct {
 var _ PageReader = (*SerializedPageReader)(nil)
 
 func NewSerializedPageReader(
-	stream io.Reader,
+	// stream io.Reader, // TODO: Wrap our streams as an io.Reader
+	stream ArrowInputStream,
 	totalNumRows int64,
 	codec compress.CompressionCodec,
 	pool memory.Allocator,
