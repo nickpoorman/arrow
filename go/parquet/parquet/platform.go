@@ -16,7 +16,7 @@ type ArrowInputStream arrowio.InputStream
 const kDefaultOutputStreamSize int64 = 1024
 const kNonPageOrdinal int16 = -1
 
-func CreateOutputStream(pool memory.Allocator) *arrowio.BufferedOutputStream {
+func CreateOutputStream(pool memory.Allocator) *arrowio.BufferOutputStream {
 	return arrowio.NewBufferOutputStream(kDefaultOutputStreamSize, pool)
 }
 

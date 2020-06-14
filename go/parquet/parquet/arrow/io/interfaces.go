@@ -29,7 +29,7 @@ type FileInterface interface {
 	Abort() error
 
 	// Return the position in this stream
-	Tell() (int64, error)
+	Tell() (int, error)
 
 	// Return whether the stream is closed
 	Closed() bool
@@ -49,7 +49,7 @@ type Writable interface {
 	// held in a buffer, or written asynchronously.  In the case where
 	// the stream buffers the data, it will be copied.  To avoid potentially
 	// large copies, use the Write variant that takes an owned Buffer.
-	Write(data []byte, nbytes int64) error
+	Write(data []byte, nbytes int) error
 
 	// Write the given data to the stream
 	//
@@ -170,12 +170,6 @@ type WritableFile interface {
 type ReadWriteFileInterface interface {
 	RandomAccessFile
 	WritableFile
-}
-
-type BufferedOutputStream struct{}
-
-func NewBufferOutputStream(size int64, pool memory.Allocator) *BufferedOutputStream {
-	return &BufferedOutputStream{}
 }
 
 // func Peek(r io.Reader, nbytes int) ([]byte, error) {

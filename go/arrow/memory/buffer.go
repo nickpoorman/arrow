@@ -140,3 +140,11 @@ func (b *Buffer) EqualsLen(right *Buffer, nbytes int) bool {
 		(&leftB == &rightB ||
 			bytes.Equal(b.Bytes()[:nbytes], right.Bytes()[:nbytes])))
 }
+
+// Zero bytes in padding, i.e. bytes between length and capacity.
+func (b *Buffer) ZeroPadding() {
+	debug.Assert(b.mutable, "buffer not mutable")
+	if b.Cap() != 0 {
+		memory.Set(b.mutable[b.length:], 0x00)
+	}
+}

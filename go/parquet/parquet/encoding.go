@@ -256,11 +256,11 @@ func (e *Int64PlainEncoder) PutArrowArray(values array.Interface) error {
 
 	if values.NullN() == 0 {
 		// no nulls, just dump the data
-		e.sink.AppendValues(rawValues)
+		e.sink.(*array.Int64BufferBuilder).AppendValues(rawValues)
 	} else {
 		for i := 0; i < vals.Len(); i++ {
 			if vals.IsValid(i) {
-				e.sink.AppendValue(vals.Value(i))
+				e.sink.(*array.Int64BufferBuilder).AppendValue(vals.Value(i))
 			}
 		}
 	}
