@@ -129,7 +129,7 @@ func (l *LevelDecoder) Decode(batchSize int, levels []int16) int {
 }
 
 func defaultReaderProperties() *ReaderProperties {
-	return NewDefaultReaderProperties()
+	return NewReaderProperties(memory.DefaultAllocator)
 }
 
 // Extracts encoded statistics from V1 and V2 data page headers
