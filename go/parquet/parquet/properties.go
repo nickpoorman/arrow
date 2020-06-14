@@ -5,6 +5,7 @@ import (
 
 	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/memory"
+	arrowio "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/io"
 	"github.com/nickpoorman/arrow-parquet-go/parquet/compress"
 )
 
@@ -620,7 +621,7 @@ type ArrowReaderProperties struct {
 	batchSize        int64
 	preBuffer        bool
 	// asyncContext arrowio.AsyncContext
-	// cacheOptions arrowio.CacheOptions
+	cacheOptions *arrowio.CacheOptions
 }
 
 func NewArrowReaderProperties(useThreads bool) *ArrowReaderProperties {
@@ -629,7 +630,7 @@ func NewArrowReaderProperties(useThreads bool) *ArrowReaderProperties {
 		readDictIndicies: make(map[int]struct{}),
 		batchSize:        kArrowDefaultBatchSize,
 		preBuffer:        false,
-		// cacheOptions: arrowio.NewCacheOptionsDefault(),
+		cacheOptions:     arrowio.NewCacheOptionsDefaults(),
 	}
 }
 
@@ -673,12 +674,12 @@ func (p *ArrowReaderProperties) SetPreBuffer(preBuffer bool) {
 
 // Set options for read coalescing. This can be used to tune the
 // implementation for characteristics of different filesystems.
-// func (p *ArrowReaderProperties) SetCacheOptions(options arrowio.CacheOptions) {
-// 	p.cacheOptions = options
-// }
-// func (p *ArrowReaderProperties) CacheOptions() arrowio.CacheOptions {
-// 	return p.cacheOptions
-// }
+func (p *ArrowReaderProperties) SetCacheOptions(options *arrowio.CacheOptions) {
+	p.cacheOptions = options
+}
+func (p *ArrowReaderProperties) CacheOptions() *arrowio.CacheOptions {
+	return p.cacheOptions
+}
 
 // Set execution context for read coalescing.
 // func (p *ArrowReaderProperties) SetAsyncContext(ctx arrowio.AsyncContext) {
