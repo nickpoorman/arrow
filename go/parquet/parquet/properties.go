@@ -858,6 +858,10 @@ func (b *ArrowWriterPropertiesBuilder) Build() *ArrowWriterProperties {
 	)
 }
 
+func DefaultArrowWriterProperties() *ArrowWriterProperties {
+	return NewArrowWriterPropertiesBuilder().Build()
+}
+
 // State object used for writing Arrow data directly to a Parquet
 // column chunk. API possibly not stable
 type ArrowWriteContext struct {
