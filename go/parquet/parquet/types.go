@@ -1461,58 +1461,55 @@ type EncryptionAlgorithm struct {
 }
 
 // parquet::PageType
-type PageTypeEnum int
+type PageType int
 
 const (
-	_ PageTypeEnum = iota
-	PageTypeEnum_DATA_PAGE
-	PageTypeEnum_INDEX_PAGE
-	PageTypeEnum_DICTIONARY_PAGE
-	PageTypeEnum_DATA_PAGE_V2
+	_ PageType = iota
+	PageType_DATA_PAGE
+	PageType_INDEX_PAGE
+	PageType_DICTIONARY_PAGE
+	PageType_DATA_PAGE_V2
 )
 
-type PageType struct {
-	Type PageTypeEnum
-}
-
-type ColumnOrderEnum int
+type ColumnOrder int
 
 const (
-	_ ColumnOrderEnum = iota
-	ColumnOrderEnum_UNDEFINED
-	ColumnOrderEnum_TYPE_DEFINED_ORDER
+	_ ColumnOrder = iota
+	ColumnOrder_UNDEFINED
+	ColumnOrder_TYPE_DEFINED_ORDER
 )
 
-type ColumnOrder struct {
-	ColumnOrder ColumnOrderEnum
-}
+// TODO: Remove
+// type ColumnOrder struct {
+// 	ColumnOrder ColumnOrderEnum
+// }
 
-func NewColumnOrder() ColumnOrder {
-	return ColumnOrder{
-		// Default to Type Defined Order
-		ColumnOrder: ColumnOrderEnum_TYPE_DEFINED_ORDER,
-	}
-}
+// func NewColumnOrder() ColumnOrder {
+// 	return ColumnOrder{
+// 		// Default to Type Defined Order
+// 		ColumnOrder: ColumnOrderEnum_TYPE_DEFINED_ORDER,
+// 	}
+// }
 
-func NewColumnOrderFromType(columnOrder ColumnOrderEnum) ColumnOrder {
-	return ColumnOrder{
-		ColumnOrder: columnOrder,
-	}
-}
+// func NewColumnOrderFromType(columnOrder ColumnOrderEnum) ColumnOrder {
+// 	return ColumnOrder{
+// 		ColumnOrder: columnOrder,
+// 	}
+// }
 
-func NewColumnOrderUndefined() ColumnOrder {
-	return ColumnOrder{
-		// Default to Type Defined Order
-		ColumnOrder: ColumnOrderEnum_UNDEFINED,
-	}
-}
+// func NewColumnOrderUndefined() ColumnOrder {
+// 	return ColumnOrder{
+// 		// Default to Type Defined Order
+// 		ColumnOrder: ColumnOrderEnum_UNDEFINED,
+// 	}
+// }
 
-func NewColumnOrderTypeDefined() ColumnOrder {
-	return ColumnOrder{
-		// Default to Type Defined Order
-		ColumnOrder: ColumnOrderEnum_TYPE_DEFINED_ORDER,
-	}
-}
+// func NewColumnOrderTypeDefined() ColumnOrder {
+// 	return ColumnOrder{
+// 		// Default to Type Defined Order
+// 		ColumnOrder: ColumnOrderEnum_TYPE_DEFINED_ORDER,
+// 	}
+// }
 
 // ----------------------------------------------------------------------
 

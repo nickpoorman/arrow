@@ -8,6 +8,8 @@ import (
 // type Buffer memory.Buffer
 // type Codec compress.CompressionCodec
 type MemoryPool memory.Allocator
+
+// type Buffer memory.Buffer
 type MutableBuffer memory.Buffer
 type ResizableBuffer memory.Buffer
 type ArrowInputFile arrowio.RandomAccessFile
