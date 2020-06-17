@@ -38,3 +38,8 @@ func (c *ZSTDCompressor) Compress(buf []byte) []byte {
 func (c *ZSTDCompressor) Uncompress(buf []byte) (bytes []byte, err error) {
 	return c.dec.DecodeAll(buf, nil)
 }
+
+func (c *ZSTDCompressor) UncompressTo(dst []byte, src []byte) error {
+	_, err := c.dec.DecodeAll(src, dst)
+	return err
+}

@@ -12,6 +12,7 @@ type CompressorBuilder func(compressionLevel int) Compressor
 type Compressor interface {
 	Compress(buf []byte) []byte
 	Uncompress(buf []byte) ([]byte, error)
+	UncompressTo(dst []byte, src []byte) error
 }
 
 type Decompressor struct {
@@ -32,6 +33,16 @@ func Uncompress(buf []byte, compressMethod CompressionCodec) ([]byte, error) {
 	c := b(kUseDefaultCompressionLevel)
 
 	return c.Uncompress(buf)
+}
+
+func UncompressTo(dst []byte, src []byte, compressMethod CompressionCodec) error {
+	b, ok := compressors[compressMethod]
+	if !ok {
+		return fmt.Errorf("unsupported compress method: %w", CompressException)
+	}
+	c := b(kUseDefaultCompressionLevel)
+
+	return c.UncompressTo(dst, src)
 }
 
 func Compress(buf []byte, compressMethod CompressionCodec) []byte {

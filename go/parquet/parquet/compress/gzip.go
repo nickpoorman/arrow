@@ -73,3 +73,18 @@ func (c *GzipCompressor) Uncompress(buf []byte) ([]byte, error) {
 	defer gzipReader.Close()
 	return ioutil.ReadAll(gzipReader)
 }
+
+// TODO(nickpoorman): Maybe we should create a BufferWriter that can write to a *memory.Buffer?
+func (c *GzipCompressor) UncompressTo(dst []byte, src []byte) error {
+	gzipReader, err := gzip.NewReader(bytes.NewReader(src))
+	if err != nil {
+		return err
+	}
+	defer gzipReader.Close()
+	all, err := ioutil.ReadAll(gzipReader)
+	if err != nil {
+		return err
+	}
+	copy(dst, all)
+	return nil
+}

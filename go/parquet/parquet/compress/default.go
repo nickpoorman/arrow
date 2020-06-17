@@ -17,3 +17,8 @@ func (c *UncompressedCompressor) Compress(buf []byte) []byte {
 func (c *UncompressedCompressor) Uncompress(buf []byte) (bytes []byte, err error) {
 	return buf, nil
 }
+
+func (c *UncompressedCompressor) UncompressTo(dst []byte, src []byte) error {
+	copy(dst, src)
+	return nil
+}

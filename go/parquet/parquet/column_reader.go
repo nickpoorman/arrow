@@ -464,7 +464,21 @@ func (s *SerializedPageReader) InitDecryption() {
 func (s *SerializedPageReader) DecompressPage(
 	compressedLen int, uncompressedLen int,
 	pageBuffer []byte,
-) *memory.Buffer {
+) (*memory.Buffer, error) {
+	// Grow the uncompressed buffer if we need to.
+	if uncompressedLen > s.decompressionBuffer.Len() {
+		s.decompressionBuffer.ResizeNoShrink(uncompressedLen)
+	}
+
+	if s.currentPageHeader.Type != parquet.PageType_DATA_PAGE_V2 {
+		if err := s.decompressor.UncompressTo(
+			s.decompressionBuffer.Buf()[:uncompressedLen],
+			pageBuffer[:compressedLen]); err != nil {
+			return nil, err
+		}
+	}
+
+	.....
 }
 
 type CryptoContext struct {
