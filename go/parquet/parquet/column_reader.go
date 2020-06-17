@@ -168,7 +168,7 @@ type SerializedPageReader struct {
 	stream ArrowInputStream
 
 	currentPageHeader parquet.PageHeader
-	currentPage       Page
+	currentPage       *Page
 
 	// Compression codec to use.
 	decompressor        compress.Compressor
@@ -237,7 +237,7 @@ func NewSerializedPageReader(
 }
 
 // Implement the PageReader interface
-func (s *SerializedPageReader) NextPage() (*Page, error) {
+func (s *SerializedPageReader) NextPage() (Page, error) {
 	// Loop here because there may be unhandled page types that we skip until
 	// finding a page that we do know what to do with
 
@@ -352,9 +352,9 @@ func (s *SerializedPageReader) NextPage() (*Page, error) {
 			return NewDictionaryPage(
 				pageBuffer,
 				dictHeader.GetNumValues(),
-				dictHeader.GetEncoding(),
+				EncodingTypeFromThrift(dictHeader.GetEncoding()),
 				isSorted,
-			)
+			), nil
 		case parquet.PageType_DATA_PAGE:
 			s.pageOrdinal++
 			header := s.currentPageHeader.GetDataPageHeader()
@@ -371,12 +371,12 @@ func (s *SerializedPageReader) NextPage() (*Page, error) {
 			return NewDataPageV1(
 				pageBuffer,
 				header.GetNumValues(),
-				header.GetEncoding(),
-				header.GetDefinitionLevelEncoding(),
-				header.GetRepetitionLevelEncoding(),
-				uncompressedLen,
+				EncodingTypeFromThrift(header.GetEncoding()),
+				EncodingTypeFromThrift(header.GetDefinitionLevelEncoding()),
+				EncodingTypeFromThrift(header.GetRepetitionLevelEncoding()),
+				int64(uncompressedLen),
 				pageStatistics,
-			)
+			), nil
 		case parquet.PageType_DATA_PAGE_V2:
 			s.pageOrdinal++
 			header := s.currentPageHeader.GetDataPageHeaderV2()
@@ -403,13 +403,13 @@ func (s *SerializedPageReader) NextPage() (*Page, error) {
 				header.GetNumValues(),
 				header.GetNumNulls(),
 				header.GetNumRows(),
-				header.GetEncoding(),
+				EncodingTypeFromThrift(header.GetEncoding()),
 				header.GetDefinitionLevelsByteLength(),
 				header.GetRepetitionLevelsByteLength(),
-				uncompressedLen,
+				int64(uncompressedLen),
 				isCompressed,
 				pageStatistics,
-			)
+			), nil
 		default:
 			// We don't know what this page type is. We're allowed to skip non-data
 			// pages.
@@ -497,7 +497,7 @@ type PageReader interface {
 
 	// returns nil on EOS, *Page
 	// containing new Page otherwise
-	NextPage() *Page
+	NextPage() (Page, error)
 
 	SetMaxPageHeaderSize(size uint32)
 }

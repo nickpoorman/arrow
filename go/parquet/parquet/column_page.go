@@ -2,6 +2,10 @@ package parquet
 
 import "github.com/apache/arrow/go/arrow/memory"
 
+type Page interface {
+	Type() PageType
+}
+
 // TODO(nickpoorman): Verify this holds true for this implementation.
 // TODO: Parallel processing is not yet safe because of memory-ownership
 // semantics (the PageReader may or may not own the memory referenced by a
@@ -10,30 +14,30 @@ import "github.com/apache/arrow/go/arrow/memory"
 // TODO(nickpoorman): In the future Parquet implementations may store the crc code
 // in format::PageHeader. parquet-mr currently does not, so we also skip it
 // here, both on the read and write path
-type Page struct {
+type page struct {
 	buffer *memory.Buffer
 	type_  PageType
 }
 
-func NewPage(buffer *memory.Buffer, t PageType) *Page {
-	return &Page{
+func NewPage(buffer *memory.Buffer, t PageType) *page {
+	return &page{
 		buffer: buffer,
 		type_:  t,
 	}
 }
 
-func (p *Page) Type() PageType { return p.type_ }
+func (p *page) Type() PageType { return p.type_ }
 
-func (p *Page) Buffer() *memory.Buffer { return p.buffer }
+func (p *page) Buffer() *memory.Buffer { return p.buffer }
 
 // returns a pointer to the page's data
-func (p *Page) Data() []byte { return p.buffer.Buf() }
+func (p *page) Data() []byte { return p.buffer.Buf() }
 
 // returns the total size in bytes of the page's data buffer
-func (p *Page) Size() int { return p.buffer.Len() }
+func (p *page) Size() int { return p.buffer.Len() }
 
 type DataPage struct {
-	*Page
+	*page
 
 	numValues        int32
 	encoding         EncodingType
@@ -47,7 +51,7 @@ func NewDataPage(t PageType, buffer *memory.Buffer, numValues int32,
 		statistics = NewEncodedStatistics()
 	}
 	return &DataPage{
-		Page: NewPage(buffer, t),
+		page: NewPage(buffer, t),
 
 		numValues:        numValues,
 		encoding:         encoding,
@@ -68,7 +72,7 @@ type DataPageV1 struct {
 	repetitionLevelEncoding EncodingType
 }
 
-func NewDataPageV1(t PageType, buffer *memory.Buffer, numValues int32,
+func NewDataPageV1(buffer *memory.Buffer, numValues int32,
 	encoding EncodingType, definitionLevelEncoding EncodingType,
 	repetitionLevelEncoding EncodingType, uncompressedSize int64,
 	statistics *EncodedStatistics) *DataPageV1 {
@@ -140,7 +144,7 @@ func (d *DataPageV2) RepetitionLevelsByteLength() int32 {
 func (d *DataPageV2) IsCompressed() bool { return d.isCompressed }
 
 type DictionaryPage struct {
-	*Page
+	*page
 
 	numValues int32
 	encoding  EncodingType
@@ -150,7 +154,7 @@ type DictionaryPage struct {
 func NewDictionaryPage(buffer *memory.Buffer, numValues int32,
 	encoding EncodingType, isSorted bool) *DictionaryPage {
 	return &DictionaryPage{
-		Page: NewPage(buffer, PageType_DICTIONARY_PAGE),
+		page: NewPage(buffer, PageType_DICTIONARY_PAGE),
 
 		numValues: numValues,
 		encoding:  encoding,

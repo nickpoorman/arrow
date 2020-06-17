@@ -1388,7 +1388,7 @@ func (u UnknownLogicalType) ToJSON() (string, error) {
 	return fmt.Sprintf(`{"Type": "%s"}`, str), nil
 }
 
-// Data encodings. Mirrors parquet::Encoding
+// Data encodings. Mirrors parquet.Encoding
 type EncodingType int
 
 const (
