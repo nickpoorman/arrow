@@ -141,6 +141,7 @@ set(ARROW_SRCS
     array/validate.cc
     builder.cc
     buffer.cc
+    chunked_array.cc
     compare.cc
     datum.cc
     device.cc
@@ -171,9 +172,11 @@ set(ARROW_SRCS
     io/interfaces.cc
     io/memory.cc
     io/slow.cc
+    io/transform.cc
     testing/util.cc
     util/basic_decimal.cc
     util/bit_block_counter.cc
+    util/bit_run_reader.cc
     util/bit_util.cc
     util/bitmap.cc
     util/bitmap_builders.cc
@@ -355,10 +358,11 @@ if(ARROW_COMPUTE)
               compute/kernels/scalar_compare.cc
               compute/kernels/scalar_set_lookup.cc
               compute/kernels/scalar_string.cc
-              compute/kernels/vector_filter.cc
+              compute/kernels/scalar_validity.cc
+              compute/kernels/util_internal.cc
               compute/kernels/vector_hash.cc
-              compute/kernels/vector_sort.cc
-              compute/kernels/vector_take.cc)
+              compute/kernels/vector_selection.cc
+              compute/kernels/vector_sort.cc)
 endif()
 
 if(ARROW_FILESYSTEM)
@@ -564,7 +568,12 @@ set_source_files_properties(public_api_test.cc
 add_arrow_test(scalar_test)
 add_arrow_test(type_test)
 
-add_arrow_test(table_test SOURCES table_test.cc table_builder_test.cc)
+add_arrow_test(table_test
+               SOURCES
+               chunked_array_test.cc
+               record_batch_test.cc
+               table_test.cc
+               table_builder_test.cc)
 
 add_arrow_test(tensor_test)
 add_arrow_test(sparse_tensor_test)

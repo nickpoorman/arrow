@@ -40,6 +40,7 @@
 #include "arrow/testing/gtest_util.h"
 #include "arrow/util/io_util.h"
 #include "arrow/util/iterator.h"
+#include "arrow/util/logging.h"
 #include "arrow/util/make_unique.h"
 
 namespace arrow {
@@ -258,9 +259,11 @@ struct MakeFileSystemDatasetMixin {
     std::stringstream ss(pathlist);
     std::string line;
     while (std::getline(ss, line)) {
-      if (std::all_of(line.begin(), line.end(), [](char c) { return isspace(c); })) {
+      auto start = line.find_first_not_of(" \n\r\t");
+      if (start == std::string::npos) {
         continue;
       }
+      line.erase(0, start);
 
       if (line.front() == '#') {
         continue;

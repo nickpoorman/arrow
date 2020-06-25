@@ -264,6 +264,25 @@ def test_asarray():
     assert np_arr.tolist() == ['a', 'b', 'c', 'a', 'b']
 
 
+@pytest.mark.parametrize('ty', [
+    None,
+    pa.null(),
+    pa.int8(),
+    pa.string()
+])
+def test_nulls(ty):
+    arr = pa.nulls(3, type=ty)
+    expected = pa.array([None, None, None], type=ty)
+
+    assert len(arr) == 3
+    assert arr.equals(expected)
+
+    if ty is None:
+        assert arr.type == pa.null()
+    else:
+        assert arr.type == ty
+
+
 def test_array_getitem():
     arr = pa.array(range(10, 15))
     lst = arr.to_pylist()
@@ -1035,8 +1054,7 @@ def test_floating_point_truncate_unsafe():
     ]
     for case in unsafe_cases:
         # test safe casting raises
-        with pytest.raises(pa.ArrowInvalid,
-                           match='Floating point value truncated'):
+        with pytest.raises(pa.ArrowInvalid, match='truncated'):
             _check_cast_case(case, safe=True)
 
         # test unsafe casting truncates
@@ -1172,8 +1190,7 @@ def test_decimal_to_decimal():
 def test_safe_cast_nan_to_int_raises():
     arr = pa.array([np.nan, 1.])
 
-    with pytest.raises(pa.ArrowInvalid,
-                       match='Floating point value truncated'):
+    with pytest.raises(pa.ArrowInvalid, match='truncated'):
         arr.cast(pa.int64(), safe=True)
 
 
@@ -1351,6 +1368,10 @@ def test_dictionary_encode_sliced():
         result = pa.chunked_array([], type=arr.type).dictionary_encode()
         assert result.num_chunks == 0
         assert result.type == expected.type
+
+    # ARROW-9143 dictionary_encode after slice was segfaulting
+    array = pa.array(['foo', 'bar', 'baz'])
+    array.slice(1).dictionary_encode()
 
 
 def test_dictionary_encode_zero_length():
@@ -1899,6 +1920,13 @@ def test_array_from_strided_bool():
     result = pa.array(arr[0, :])
     expected = pa.array([True, True])
     assert result.equals(expected)
+
+
+def test_boolean_true_count_false_count():
+    # ARROW-9145
+    arr = pa.array([True, True, None, False, None, True] * 1000)
+    assert arr.true_count == 3000
+    assert arr.false_count == 1000
 
 
 def test_buffers_primitive():

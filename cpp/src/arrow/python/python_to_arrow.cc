@@ -30,8 +30,8 @@
 
 #include "arrow/array.h"
 #include "arrow/builder.h"
+#include "arrow/chunked_array.h"
 #include "arrow/status.h"
-#include "arrow/table.h"
 #include "arrow/type.h"
 #include "arrow/type_traits.h"
 #include "arrow/util/checked_cast.h"
@@ -1171,6 +1171,12 @@ Status GetConverterFlat(const std::shared_ptr<DataType>& type, bool strict_conve
 
 Status GetConverter(const std::shared_ptr<DataType>& type, bool from_pandas,
                     bool strict_conversions, std::unique_ptr<SeqConverter>* out) {
+  if (from_pandas) {
+    // ARROW-842: If pandas is not installed then null checks will be less
+    // comprehensive, but that is okay.
+    internal::InitPandasStaticData();
+  }
+
   switch (type->id()) {
     case Type::LIST:
       if (from_pandas) {

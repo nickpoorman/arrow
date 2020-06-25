@@ -23,14 +23,15 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "arrow/array/array_base.h"
 #include "arrow/array/data.h"
-#include "arrow/buffer.h"
 #include "arrow/result.h"
 #include "arrow/status.h"
 #include "arrow/type.h"
+#include "arrow/type_fwd.h"
 #include "arrow/util/checked_cast.h"
 #include "arrow/util/macros.h"
 #include "arrow/util/visibility.h"
@@ -114,6 +115,9 @@ class ARROW_EXPORT ListArray : public BaseListArray<ListType> {
   Result<std::shared_ptr<Array>> Flatten(
       MemoryPool* memory_pool = default_memory_pool()) const;
 
+  /// \brief Return list offsets as an Int32Array
+  std::shared_ptr<Array> offsets() const;
+
  protected:
   // This constructor defers SetData to a derived array class
   ListArray() = default;
@@ -155,6 +159,9 @@ class ARROW_EXPORT LargeListArray : public BaseListArray<LargeListType> {
   /// by non-empty lists (they are skipped, thus copying may be needed).
   Result<std::shared_ptr<Array>> Flatten(
       MemoryPool* memory_pool = default_memory_pool()) const;
+
+  /// \brief Return list offsets as an Int64Array
+  std::shared_ptr<Array> offsets() const;
 
  protected:
   void SetData(const std::shared_ptr<ArrayData>& data);
@@ -201,6 +208,11 @@ class ARROW_EXPORT MapArray : public ListArray {
       const std::shared_ptr<Array>& offsets, const std::shared_ptr<Array>& keys,
       const std::shared_ptr<Array>& items, MemoryPool* pool = default_memory_pool());
 
+  static Result<std::shared_ptr<Array>> FromArrays(
+      std::shared_ptr<DataType> type, const std::shared_ptr<Array>& offsets,
+      const std::shared_ptr<Array>& keys, const std::shared_ptr<Array>& items,
+      MemoryPool* pool = default_memory_pool());
+
   const MapType* map_type() const { return map_type_; }
 
   /// \brief Return array object containing all map keys
@@ -215,6 +227,11 @@ class ARROW_EXPORT MapArray : public ListArray {
 
  protected:
   void SetData(const std::shared_ptr<ArrayData>& data);
+
+  static Result<std::shared_ptr<Array>> FromArraysInternal(
+      std::shared_ptr<DataType> type, const std::shared_ptr<Array>& offsets,
+      const std::shared_ptr<Array>& keys, const std::shared_ptr<Array>& items,
+      MemoryPool* pool);
 
  private:
   const MapType* map_type_;

@@ -179,6 +179,8 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
         CResult[shared_ptr[CArray]] View(const shared_ptr[CDataType]& type)
 
     shared_ptr[CArray] MakeArray(const shared_ptr[CArrayData]& data)
+    CResult[shared_ptr[CArray]] MakeArrayOfNull(
+        const shared_ptr[CDataType]& type, int64_t length, CMemoryPool* pool)
 
     CStatus DebugPrint(const CArray& arr, int indent)
 
@@ -445,6 +447,8 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
 
     cdef cppclass CBooleanArray" arrow::BooleanArray"(CArray):
         c_bool Value(int i)
+        int64_t false_count()
+        int64_t true_count()
 
     cdef cppclass CUInt8Array" arrow::UInt8Array"(CArray):
         uint8_t Value(int i)
@@ -514,6 +518,7 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
         int32_t value_offset(int i)
         int32_t value_length(int i)
         shared_ptr[CArray] values()
+        shared_ptr[CArray] offsets()
         CResult[shared_ptr[CArray]] Flatten(CMemoryPool* memory_pool)
         shared_ptr[CDataType] value_type()
 
@@ -525,6 +530,7 @@ cdef extern from "arrow/api.h" namespace "arrow" nogil:
         int64_t value_offset(int i)
         int64_t value_length(int i)
         shared_ptr[CArray] values()
+        shared_ptr[CArray] offsets()
         CResult[shared_ptr[CArray]] Flatten(CMemoryPool* memory_pool)
         shared_ptr[CDataType] value_type()
 
@@ -976,6 +982,11 @@ cdef extern from "arrow/builder.h" namespace "arrow" nogil:
         CStatus Append(const int64_t value)
 
 
+# Use typedef to emulate syntax for std::function<void(..)>
+ctypedef void CallbackTransform(
+    object, const shared_ptr[CBuffer]& src, shared_ptr[CBuffer]* dest)
+
+
 cdef extern from "arrow/io/api.h" namespace "arrow::io" nogil:
     enum FileMode" arrow::io::FileMode::type":
         FileMode_READ" arrow::io::FileMode::READ"
@@ -1100,6 +1111,16 @@ cdef extern from "arrow/io/api.h" namespace "arrow::io" nogil:
             shared_ptr[COutputStream] raw)
 
         CResult[shared_ptr[COutputStream]] Detach()
+
+    cdef cppclass CTransformInputStreamVTable \
+            "arrow::py::TransformInputStreamVTable":
+        CTransformInputStreamVTable()
+        function[CallbackTransform] transform
+
+    shared_ptr[CInputStream] MakeTransformInputStream \
+        "arrow::py::MakeTransformInputStream"(
+        shared_ptr[CInputStream] wrapped, CTransformInputStreamVTable vtable,
+        object method_arg)
 
     # ----------------------------------------------------------------------
     # HDFS
@@ -1517,7 +1538,8 @@ cdef extern from "arrow/compute/api.h" namespace "arrow::compute" nogil:
         const CArity& arity() const
         int num_kernels() const
         CResult[CDatum] Execute(const vector[CDatum]& args,
-                                const CFunctionOptions* options)
+                                const CFunctionOptions* options,
+                                CExecContext* ctx)
 
     cdef cppclass CScalarFunction" arrow::compute::ScalarFunction"(CFunction):
         vector[const CScalarKernel*] kernels() const
@@ -1566,6 +1588,8 @@ cdef extern from "arrow/compute/api.h" namespace "arrow::compute" nogil:
 
     cdef cppclass CFilterOptions \
             " arrow::compute::FilterOptions"(CFunctionOptions):
+        CFilterOptions()
+        CFilterOptions(CFilterNullSelectionBehavior null_selection)
         CFilterNullSelectionBehavior null_selection_behavior
 
     cdef cppclass CTakeOptions \
@@ -1736,6 +1760,7 @@ cdef extern from "arrow/python/api.h" namespace "arrow::py" nogil:
         c_bool zero_copy_only
         c_bool integer_object_nulls
         c_bool date_as_object
+        c_bool timestamp_as_object
         c_bool use_threads
         c_bool coerce_temporal_nanoseconds
         c_bool deduplicate_objects
@@ -1901,8 +1926,9 @@ cdef extern from 'arrow/util/thread_pool.h' namespace 'arrow' nogil:
     CStatus SetCpuThreadPoolCapacity(int threads)
 
 cdef extern from 'arrow/array/concatenate.h' namespace 'arrow' nogil:
-    CStatus Concatenate(const vector[shared_ptr[CArray]]& arrays,
-                        CMemoryPool* pool, shared_ptr[CArray]* result)
+    CResult[shared_ptr[CArray]] Concatenate(
+        const vector[shared_ptr[CArray]]& arrays,
+        CMemoryPool* pool)
 
 cdef extern from 'arrow/c/abi.h':
     cdef struct ArrowSchema:

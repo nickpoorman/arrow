@@ -21,6 +21,8 @@
 Arrow Columnar Format
 *********************
 
+*Version: 1.0*
+
 The "Arrow Columnar Format" includes a language-agnostic in-memory
 data structure specification, metadata serialization, and a protocol
 for serialization and generic data transport.
@@ -859,7 +861,7 @@ Schema message
 
 The Flatbuffers files `Schema.fbs`_ contains the definitions for all
 built-in logical data types and the ``Schema`` metadata type which
-represents the schema of a given record batch. A schema consists of of
+represents the schema of a given record batch. A schema consists of
 an ordered sequence of fields, each having a name and type. A
 serialized ``Schema`` does not contain any data buffers, only type
 metadata.
@@ -879,7 +881,7 @@ array. This includes:
   to allow matching a subsequent dictionary IPC message with the
   appropriate field.
 
-We additionally provide provide both schema-level and field-level
+We additionally provide both schema-level and field-level
 ``custom_metadata`` attributes allowing for systems to insert their
 own application defined metadata to customize behavior.
 
@@ -1026,7 +1028,7 @@ should be defined in a ``DictionaryBatch`` before they are used in a
 ``RecordBatch``, as long as the keys are defined somewhere in the
 file. Further more, it is invalid to have more then one **non-delta**
 dictionary batch per dictionary ID (i.e. dictionary replacement is not
-supported).  Delta dictionaries are applied in the order they appear in 
+supported).  Delta dictionaries are applied in the order they appear in
 the file footer.
 
 Dictionary Messages

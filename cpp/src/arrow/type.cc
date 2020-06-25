@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "arrow/array.h"
+#include "arrow/chunked_array.h"
 #include "arrow/compare.h"
 #include "arrow/record_batch.h"
 #include "arrow/result.h"
@@ -1210,6 +1211,22 @@ std::vector<FieldPath> FieldRef::FindAll(const FieldVector& fields) const {
   };
 
   return util::visit(Visitor{fields}, impl_);
+}
+
+std::vector<FieldPath> FieldRef::FindAll(const Array& array) const {
+  return FindAll(*array.type());
+}
+
+std::vector<FieldPath> FieldRef::FindAll(const ChunkedArray& array) const {
+  return FindAll(*array.type());
+}
+
+std::vector<FieldPath> FieldRef::FindAll(const RecordBatch& batch) const {
+  return FindAll(*batch.schema());
+}
+
+std::vector<FieldPath> FieldRef::FindAll(const Table& table) const {
+  return FindAll(*table.schema());
 }
 
 void PrintTo(const FieldRef& ref, std::ostream* os) { *os << ref.ToString(); }

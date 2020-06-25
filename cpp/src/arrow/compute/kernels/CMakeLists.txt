@@ -26,8 +26,11 @@ add_arrow_compute_test(scalar_test
                        scalar_compare_test.cc
                        scalar_set_lookup_test.cc
                        scalar_string_test.cc
+                       scalar_validity_test.cc
                        test_util.cc)
 
+add_arrow_benchmark(scalar_arithmetic_benchmark PREFIX "arrow-compute")
+add_arrow_benchmark(scalar_cast_benchmark PREFIX "arrow-compute")
 add_arrow_benchmark(scalar_compare_benchmark PREFIX "arrow-compute")
 add_arrow_benchmark(scalar_string_benchmark PREFIX "arrow-compute")
 
@@ -36,9 +39,8 @@ add_arrow_benchmark(scalar_string_benchmark PREFIX "arrow-compute")
 
 add_arrow_compute_test(vector_test
                        SOURCES
-                       vector_filter_test.cc
                        vector_hash_test.cc
-                       vector_take_test.cc
+                       vector_selection_test.cc
                        vector_sort_test.cc
                        test_util.cc)
 

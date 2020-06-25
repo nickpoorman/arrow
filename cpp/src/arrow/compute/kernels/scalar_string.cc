@@ -41,16 +41,54 @@ struct AsciiLength {
 
 using TransformFunc = std::function<void(const uint8_t*, int64_t, uint8_t*)>;
 
+// Transform a buffer of offsets to one which begins with 0 and has same
+// value lengths.
+template <typename T>
+Status GetShiftedOffsets(KernelContext* ctx, const Buffer& input_buffer, int64_t offset,
+                         int64_t length, std::shared_ptr<Buffer>* out) {
+  ARROW_ASSIGN_OR_RAISE(*out, ctx->Allocate((length + 1) * sizeof(T)));
+  const T* input_offsets = reinterpret_cast<const T*>(input_buffer.data()) + offset;
+  T* out_offsets = reinterpret_cast<T*>((*out)->mutable_data());
+  T first_offset = *input_offsets;
+  for (int64_t i = 0; i < length; ++i) {
+    *out_offsets++ = input_offsets[i] - first_offset;
+  }
+  *out_offsets = input_offsets[length] - first_offset;
+  return Status::OK();
+}
+
+// Apply `transform` to input character data- this function cannot change the
+// length
+template <typename Type>
 void StringDataTransform(KernelContext* ctx, const ExecBatch& batch,
                          TransformFunc transform, Datum* out) {
+  using ArrayType = typename TypeTraits<Type>::ArrayType;
+  using offset_type = typename Type::offset_type;
+
   if (batch[0].kind() == Datum::ARRAY) {
     const ArrayData& input = *batch[0].array();
+    ArrayType input_boxed(batch[0].array());
+
     ArrayData* out_arr = out->mutable_array();
-    // Reuse offsets from input
-    out_arr->buffers[1] = input.buffers[1];
-    int64_t data_nbytes = input.buffers[2]->size();
+
+    if (input.offset == 0) {
+      // We can reuse offsets from input
+      out_arr->buffers[1] = input.buffers[1];
+    } else {
+      DCHECK(input.buffers[1]);
+      // We must allocate new space for the offsets and shift the existing offsets
+      KERNEL_RETURN_IF_ERROR(
+          ctx, GetShiftedOffsets<offset_type>(ctx, *input.buffers[1], input.offset,
+                                              input.length, &out_arr->buffers[1]));
+    }
+
+    // Allocate space for output data
+    int64_t data_nbytes = input_boxed.total_values_length();
     KERNEL_RETURN_IF_ERROR(ctx, ctx->Allocate(data_nbytes).Value(&out_arr->buffers[2]));
-    transform(input.buffers[2]->data(), data_nbytes, out_arr->buffers[2]->mutable_data());
+    if (input.length > 0) {
+      transform(input.buffers[2]->data() + input_boxed.value_offset(0), data_nbytes,
+                out_arr->buffers[2]->mutable_data());
+    }
   } else {
     const auto& input = checked_cast<const BaseBinaryScalar&>(*batch[0].scalar());
     auto result = checked_pointer_cast<BaseBinaryScalar>(MakeNullScalar(out->type()));
@@ -64,90 +102,49 @@ void StringDataTransform(KernelContext* ctx, const ExecBatch& batch,
   }
 }
 
-// Generated with
-//
-// print("static constexpr uint8_t kAsciiUpperTable[] = {")
-// for i in range(256):
-//     if i > 0: print(', ', end='')
-//     if i >= ord('a') and i <= ord('z'):
-//         print(i - 32, end='')
-//     else:
-//         print(i, end='')
-// print("};")
-
-static constexpr uint8_t kAsciiUpperTable[] = {
-    0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,  15,
-    16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
-    32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,
-    48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,
-    64,  65,  66,  67,  68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,
-    80,  81,  82,  83,  84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  95,
-    96,  65,  66,  67,  68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,
-    80,  81,  82,  83,  84,  85,  86,  87,  88,  89,  90,  123, 124, 125, 126, 127,
-    128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
-    144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
-    160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175,
-    176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191,
-    192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207,
-    208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223,
-    224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
-    240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255};
-
 void TransformAsciiUpper(const uint8_t* input, int64_t length, uint8_t* output) {
   for (int64_t i = 0; i < length; ++i) {
-    *output++ = kAsciiUpperTable[*input++];
+    const uint8_t utf8_code_unit = *input++;
+    // Code units in the range [a-z] can only be an encoding of an ascii
+    // character/codepoint, not the 2nd, 3rd or 4th code unit (byte) of an different
+    // codepoint. This guaranteed by non-overlap design of the unicode standard. (see
+    // section 2.5 of Unicode Standard Core Specification v13.0)
+    *output++ = ((utf8_code_unit >= 'a') && (utf8_code_unit <= 'z'))
+                    ? (utf8_code_unit - 32)
+                    : utf8_code_unit;
   }
 }
 
-void AsciiUpperExec(KernelContext* ctx, const ExecBatch& batch, Datum* out) {
-  StringDataTransform(ctx, batch, TransformAsciiUpper, out);
-}
-
-// Generated with
-//
-// print("static constexpr uint8_t kAsciiLowerTable[] = {")
-// for i in range(256):
-//     if i > 0: print(', ', end='')
-//     if i >= ord('A') and i <= ord('Z'):
-//         print(i + 32, end='')
-//     else:
-//         print(i, end='')
-// print("};")
-
-static constexpr uint8_t kAsciiLowerTable[] = {
-    0,   1,   2,   3,   4,   5,   6,   7,   8,   9,   10,  11,  12,  13,  14,  15,
-    16,  17,  18,  19,  20,  21,  22,  23,  24,  25,  26,  27,  28,  29,  30,  31,
-    32,  33,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,
-    48,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  62,  63,
-    64,  97,  98,  99,  100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111,
-    112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 91,  92,  93,  94,  95,
-    96,  97,  98,  99,  100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111,
-    112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127,
-    128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143,
-    144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159,
-    160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175,
-    176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191,
-    192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207,
-    208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223,
-    224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
-    240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255};
+template <typename Type>
+struct AsciiUpper {
+  static void Exec(KernelContext* ctx, const ExecBatch& batch, Datum* out) {
+    StringDataTransform<Type>(ctx, batch, TransformAsciiUpper, out);
+  }
+};
 
 void TransformAsciiLower(const uint8_t* input, int64_t length, uint8_t* output) {
   for (int64_t i = 0; i < length; ++i) {
-    *output++ = kAsciiLowerTable[*input++];
+    // As with TransformAsciiUpper, the same guarantee holds for the range [A-Z]
+    const uint8_t utf8_code_unit = *input++;
+    *output++ = ((utf8_code_unit >= 'A') && (utf8_code_unit <= 'Z'))
+                    ? (utf8_code_unit + 32)
+                    : utf8_code_unit;
   }
 }
 
-void AsciiLowerExec(KernelContext* ctx, const ExecBatch& batch, Datum* out) {
-  StringDataTransform(ctx, batch, TransformAsciiLower, out);
-}
+template <typename Type>
+struct AsciiLower {
+  static void Exec(KernelContext* ctx, const ExecBatch& batch, Datum* out) {
+    StringDataTransform<Type>(ctx, batch, TransformAsciiLower, out);
+  }
+};
 
 void AddAsciiLength(FunctionRegistry* registry) {
   auto func = std::make_shared<ScalarFunction>("ascii_length", Arity::Unary());
   ArrayKernelExec exec_offset_32 =
-      codegen::ScalarUnaryNotNull<Int32Type, StringType, AsciiLength>::Exec;
+      applicator::ScalarUnaryNotNull<Int32Type, StringType, AsciiLength>::Exec;
   ArrayKernelExec exec_offset_64 =
-      codegen::ScalarUnaryNotNull<Int64Type, LargeStringType, AsciiLength>::Exec;
+      applicator::ScalarUnaryNotNull<Int64Type, LargeStringType, AsciiLength>::Exec;
   DCHECK_OK(func->AddKernel({utf8()}, int32(), exec_offset_32));
   DCHECK_OK(func->AddKernel({large_utf8()}, int64(), exec_offset_64));
   DCHECK_OK(registry->AddFunction(std::move(func)));
@@ -156,7 +153,7 @@ void AddAsciiLength(FunctionRegistry* registry) {
 // ----------------------------------------------------------------------
 // strptime string parsing
 
-using StrptimeWrapper = OptionsWrapper<StrptimeOptions>;
+using StrptimeState = OptionsWrapper<StrptimeOptions>;
 
 struct ParseStrptime {
   explicit ParseStrptime(const StrptimeOptions& options)
@@ -177,40 +174,43 @@ struct ParseStrptime {
 
 template <typename InputType>
 void StrptimeExec(KernelContext* ctx, const ExecBatch& batch, Datum* out) {
-  const auto& options = checked_cast<const StrptimeWrapper*>(ctx->state())->options;
-  codegen::ScalarUnaryNotNullStateful<TimestampType, InputType, ParseStrptime> kernel{
-      ParseStrptime(options)};
+  applicator::ScalarUnaryNotNullStateful<TimestampType, InputType, ParseStrptime> kernel{
+      ParseStrptime(StrptimeState::Get(ctx))};
   return kernel.Exec(ctx, batch, out);
 }
 
 Result<ValueDescr> StrptimeResolve(KernelContext* ctx, const std::vector<ValueDescr>&) {
-  const auto& options = checked_cast<const StrptimeWrapper*>(ctx->state())->options;
-  return ::arrow::timestamp(options.unit);
+  if (ctx->state()) {
+    return ::arrow::timestamp(StrptimeState::Get(ctx).unit);
+  }
+
+  return Status::Invalid("strptime does not provide default StrptimeOptions");
 }
 
 void AddStrptime(FunctionRegistry* registry) {
   auto func = std::make_shared<ScalarFunction>("strptime", Arity::Unary());
   DCHECK_OK(func->AddKernel({utf8()}, OutputType(StrptimeResolve),
-                            StrptimeExec<StringType>, InitWrapOptions<StrptimeOptions>));
+                            StrptimeExec<StringType>, StrptimeState::Init));
   DCHECK_OK(func->AddKernel({large_utf8()}, OutputType(StrptimeResolve),
-                            StrptimeExec<LargeStringType>,
-                            InitWrapOptions<StrptimeOptions>));
+                            StrptimeExec<LargeStringType>, StrptimeState::Init));
   DCHECK_OK(registry->AddFunction(std::move(func)));
 }
 
-void MakeUnaryStringBatchKernel(std::string name, ArrayKernelExec exec,
-                                FunctionRegistry* registry) {
+template <template <typename> class ExecFunctor>
+void MakeUnaryStringBatchKernel(std::string name, FunctionRegistry* registry) {
   auto func = std::make_shared<ScalarFunction>(name, Arity::Unary());
-  DCHECK_OK(func->AddKernel({utf8()}, utf8(), exec));
-  DCHECK_OK(func->AddKernel({large_utf8()}, large_utf8(), exec));
+  auto exec_32 = ExecFunctor<StringType>::Exec;
+  auto exec_64 = ExecFunctor<LargeStringType>::Exec;
+  DCHECK_OK(func->AddKernel({utf8()}, utf8(), exec_32));
+  DCHECK_OK(func->AddKernel({large_utf8()}, large_utf8(), exec_64));
   DCHECK_OK(registry->AddFunction(std::move(func)));
 }
 
 }  // namespace
 
 void RegisterScalarStringAscii(FunctionRegistry* registry) {
-  MakeUnaryStringBatchKernel("ascii_upper", AsciiUpperExec, registry);
-  MakeUnaryStringBatchKernel("ascii_lower", AsciiLowerExec, registry);
+  MakeUnaryStringBatchKernel<AsciiUpper>("ascii_upper", registry);
+  MakeUnaryStringBatchKernel<AsciiLower>("ascii_lower", registry);
   AddAsciiLength(registry);
   AddStrptime(registry);
 }

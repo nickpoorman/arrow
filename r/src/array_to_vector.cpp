@@ -164,15 +164,22 @@ class Converter_SimpleArray : public Converter {
   }
 };
 
-class Converter_Date32 : public Converter_SimpleArray<INTSXP> {
+class Converter_Date32 : public Converter_SimpleArray<REALSXP> {
  public:
   explicit Converter_Date32(const ArrayVector& arrays)
-      : Converter_SimpleArray<INTSXP>(arrays) {}
+      : Converter_SimpleArray<REALSXP>(arrays) {}
 
   SEXP Allocate(R_xlen_t n) const {
-    IntegerVector data(no_init(n));
+    Rcpp::NumericVector data(no_init(n));
     data.attr("class") = "Date";
     return data;
+  }
+
+  Status Ingest_some_nulls(SEXP data, const std::shared_ptr<arrow::Array>& array,
+                           R_xlen_t start, R_xlen_t n) const {
+    auto convert = [](int days) { return static_cast<double>(days); };
+    return SomeNull_Ingest<REALSXP, int>(data, start, n, array->data()->GetValues<int>(1),
+                                         array, convert);
   }
 };
 
@@ -418,7 +425,7 @@ class Converter_Struct : public Converter {
   std::vector<std::shared_ptr<Converter>> converters;
 };
 
-double ms_to_seconds(int64_t ms) { return static_cast<double>(ms / 1000); }
+double ms_to_seconds(int64_t ms) { return static_cast<double>(ms) / 1000; }
 
 class Converter_Date64 : public Converter {
  public:
@@ -479,6 +486,7 @@ class Converter_Time : public Converter {
   SEXP Allocate(R_xlen_t n) const {
     Rcpp::NumericVector data(no_init(n));
     data.attr("class") = Rcpp::CharacterVector::create("hms", "difftime");
+    // hms difftime is always stored as "seconds"
     data.attr("units") = Rcpp::CharacterVector::create("secs");
     return data;
   }
@@ -499,6 +507,7 @@ class Converter_Time : public Converter {
 
  private:
   int TimeUnit_multiplier(const std::shared_ptr<Array>& array) const {
+    // hms difftime is always "seconds", so multiply based on the Array's TimeUnit
     switch (static_cast<unit_type*>(array->type().get())->unit()) {
       case TimeUnit::SECOND:
         return 1;
@@ -717,6 +726,10 @@ std::shared_ptr<Converter> Converter::Make(const std::shared_ptr<DataType>& type
       // promotions to numeric vector
     case Type::UINT32:
       return std::make_shared<arrow::r::Converter_Promotion<REALSXP, arrow::UInt32Type>>(
+          std::move(arrays));
+
+    case Type::UINT64:
+      return std::make_shared<arrow::r::Converter_Promotion<REALSXP, arrow::UInt64Type>>(
           std::move(arrays));
 
     case Type::HALF_FLOAT:
