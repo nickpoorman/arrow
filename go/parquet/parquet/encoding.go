@@ -1005,7 +1005,6 @@ func NewPlainEncoder(descr *ColumnDescriptor,
 	}
 }
 
-// TODO: Remove this?
 func NewTypedDecoder(encoding EncodingType,
 	descr *ColumnDescriptor) (TypedDecoderInterface, error) {
 

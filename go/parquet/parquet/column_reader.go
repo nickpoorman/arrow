@@ -3,11 +3,11 @@ package parquet
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 
 	"github.com/apache/arrow/go/arrow/bitutil"
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/bytearray"
+	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 	u "github.com/nickpoorman/arrow-parquet-go/internal/util"
 	"github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util"
 	bitutilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util/bitutil"
@@ -203,8 +203,6 @@ type SerializedPageReader struct {
 	decryptionBuffer *memory.Buffer
 }
 
-var _ PageReader = (*SerializedPageReader)(nil)
-
 func NewSerializedPageReader(
 	// stream io.Reader, // TODO: Wrap our streams as an io.Reader
 	stream ArrowInputStream,
@@ -331,8 +329,12 @@ func (s *SerializedPageReader) NextPage() (Page, error) {
 
 		// Uncompress it if we need to
 		if s.decompressor != nil {
-			pageBuffer = s.DecompressPage(
-				int(compressedLen), int(uncompressedLen), pageBuffer.Bytes())
+			pageBuffer, err = s.DecompressPage(
+				int(compressedLen), int(uncompressedLen), pageBuffer.Bytes(),
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		pageType := s.currentPageHeader.GetType()
@@ -419,7 +421,7 @@ func (s *SerializedPageReader) NextPage() (Page, error) {
 	return nil, nil
 }
 
-func (s *SerializedPageReader) setMaxPageHeaderSize(size uint32) {
+func (s *SerializedPageReader) SetMaxPageHeaderSize(size uint32) {
 	s.maxPageHeaderSize = size
 }
 
@@ -476,9 +478,25 @@ func (s *SerializedPageReader) DecompressPage(
 			pageBuffer[:compressedLen]); err != nil {
 			return nil, err
 		}
+	} else {
+		// The levels are not compressed in V2 format
+		header := s.currentPageHeader.GetDataPageHeaderV2()
+		levelsLength := int(header.GetRepetitionLevelsByteLength() + header.GetDefinitionLevelsByteLength())
+		decompressed := s.decompressionBuffer.Buf()
+		copy(decompressed, pageBuffer[:levelsLength])
+		decompressed = decompressed[levelsLength:]
+		compressedValues := pageBuffer[levelsLength:]
+
+		// Decompress the values
+		if err := s.decompressor.UncompressTo(
+			decompressed[:uncompressedLen-levelsLength],
+			compressedValues[:compressedLen-levelsLength],
+		); err != nil {
+			return nil, err
+		}
 	}
 
-	.....
+	return s.decompressionBuffer, nil
 }
 
 type CryptoContext struct {
@@ -506,9 +524,6 @@ func NewCryptoContext(
 // Abstract page iterator interface. This way, we can feed column pages to the
 // ColumnReader through whatever mechanism we choose
 type PageReader interface {
-	Open(stream io.Reader, totalNumRows int64, codec compress.CompressionCodec,
-		pool memory.Allocator, ctx *CryptoContext)
-
 	// returns nil on EOS, *Page
 	// containing new Page otherwise
 	NextPage() (Page, error)
@@ -516,29 +531,72 @@ type PageReader interface {
 	SetMaxPageHeaderSize(size uint32)
 }
 
-type ColumnReader struct {
+// PLAIN_DICTIONARY is deprecated but used to be used as a dictionary index
+// encoding.
+func isDictionaryIndexEncoding(e EncodingType) bool {
+	return e == EncodingType_RLE_DICTIONARY || e == EncodingType_PLAIN_DICTIONARY
 }
 
-func NewColumnReader(descr *ColumnDescriptor, pager *PageReader,
-	pool memory.Allocator) *ColumnReader {
-	return &ColumnReader{}
+type ColumnReader interface {
+	HasNext() bool
+	Type() Type
+	ColumnDescriptor() *ColumnDescriptor
 }
 
-// Returns true if there are still values in this column.
-func (c *ColumnReader) HasNext() bool {}
+// func NewColumnReader(dtype PhysicalType,
+// 	descr *ColumnDescriptor, pager *PageReader,
+// 	pool memory.Allocator) *ColumnReader {
+// 	return &ColumnReader{
+// 		dtype: dtype,
+// 	}
+// }
 
-func (c *ColumnReader) Type() Type {}
+// // Returns true if there are still values in this column.
+// func (c *ColumnReader) HasNext() bool {
+// 	panic("not yet implemented")
+// }
 
-func (c *ColumnReader) ColumnDescriptor() *ColumnDescriptor {}
+// func (c *ColumnReader) Type() Type {
+// 	panic("not yet implemented")
+// }
+
+// func (c *ColumnReader) ColumnDescriptor() *ColumnDescriptor {
+// 	panic("not yet implemented")
+// }
+
+// type TypedColumnReader interface {
+// 	Type() PhysicalType
+
+// 	ReadBatch(batchSize int64, defLevels int16, repLevels int16,
+// 		values interface{}, valuesRead int64) int64
+
+// 	ReadBatchSpaced(
+// 		batchsize int64, defLevels int16,
+// 		repLevels int16, values interface{}, validBits []byte,
+// 		validBitsOffset int64, levelsRead int16,
+// 		valuesRead int64, nullCount int64,
+// 	) int64
+
+// 	Skip(numRowsToSkip int64) int64
+// }
 
 // API to read values from a single column. This is a main client facing API.
 type TypedColumnReader struct {
-	ColumnReader
 	dtype PhysicalType
 }
 
+// func NewTypedColumnReader(dtype PhysicalType,
+// 	descr *ColumnDescriptor, pager *PageReader,
+// 	pool memory.Allocator) *TypedColumnReader {
+// 	return &TypedColumnReader{
+// 		dtype: dtype,
+// 	}
+// }
+
 func NewTypedColumnReader(dtype PhysicalType) *TypedColumnReader {
-	return &TypedColumnReader{}
+	return &TypedColumnReader{
+		dtype: dtype,
+	}
 }
 
 // Read a batch of repetition levels, definition levels, and values from the
@@ -560,6 +618,7 @@ func NewTypedColumnReader(dtype PhysicalType) *TypedColumnReader {
 // returns actual number of levels read (see values_read for number of values read)
 func (t *TypedColumnReader) ReadBatch(batchSize int64, defLevels int16, repLevels int16,
 	values interface{}, valuesRead int64) int64 {
+	panic("not yet implemented")
 }
 
 // Read a batch of repetition levels, definition levels, and values from the
@@ -602,11 +661,403 @@ func (t *TypedColumnReader) ReadBatchSpaced(
 	validBitsOffset int64, levelsRead int16,
 	valuesRead int64, nullCount int64,
 ) int64 {
+	panic("not yet implemented")
 }
 
 // Skip reading levels
 // Returns the number of levels skipped
-func (t *TypedColumnReader) Skip(numRowsToSkip int64) int64 {}
+func (t *TypedColumnReader) Skip(numRowsToSkip int64) int64 {
+	panic("not yet implemented")
+}
+
+func NewColumnReader(descr *ColumnDescriptor, pager *PageReader,
+	pool memory.Allocator) (ColumnReader, error) {
+
+	switch descr.PhysicalType() {
+	case Type_BOOLEAN:
+		return newTypedColumnReaderImpl(BooleanType, descr, pager, pool)
+	case Type_INT32:
+		return newTypedColumnReaderImpl(Int32Type, descr, pager, pool)
+	case Type_INT64:
+		return newTypedColumnReaderImpl(Int64Type, descr, pager, pool)
+	case Type_INT96:
+		return newTypedColumnReaderImpl(Int96Type, descr, pager, pool)
+	case Type_FLOAT:
+		return newTypedColumnReaderImpl(FloatType, descr, pager, pool)
+	case Type_DOUBLE:
+		return newTypedColumnReaderImpl(DoubleType, descr, pager, pool)
+	case Type_BYTE_ARRAY:
+		return newTypedColumnReaderImpl(ByteArrayType, descr, pager, pool)
+	case Type_FIXED_LEN_BYTE_ARRAY:
+		return newTypedColumnReaderImpl(FLBAType, descr, pager, pool)
+	default:
+		return nil, fmt.Errorf("type reader not implemented: %w", ParquetNYIException)
+	}
+}
+
+type columnReaderImplBase struct {
+	dtype       PhysicalType
+	descr       *ColumnDescriptor
+	maxDefLevel int16
+	maxRepLevel int16
+
+	pager       PageReader
+	currentPage Page
+
+	// Not set if full schema for this field has no optional or repeated elements
+	definitionLevelDecoder LevelDecoder
+
+	// Not set for flat schemas.
+	repetitionLevelDecoder LevelDecoder
+
+	// The total number of values stored in the data page. This is the maximum of
+	// the number of encoded definition levels or encoded values. For
+	// non-repeated, required columns, this is equal to the number of encoded
+	// values. For repeated or optional values, there may be fewer data values
+	// than levels, and this tells you how many encoded levels there are in that
+	// case.
+	numBufferedValues int64
+
+	// The number of values from the current data page that have been decoded
+	// into memory
+	numDecodedValues int64
+
+	pool memory.Allocator
+
+	currentDecoder  TypedDecoderInterface
+	currentEncoding EncodingType
+
+	// Flag to signal when a new dictionary has been set, for the benefit of
+	// DictionaryRecordReader
+	newDictionary bool
+
+	// Map of encoding type to the respective decoder object. For example, a
+	// column chunk's data pages may include both dictionary-encoded and
+	// plain-encoded data.
+	decoders map[int]TypedDecoderInterface
+}
+
+func (c *columnReaderImplBase) consumeBufferedValues(numValues int64) {
+	c.numDecodedValues += numValues
+}
+
+// Read up to batchSize values from the current data page into the
+// pre-allocated memory: out
+//
+// returns: the number of values read into the out buffer
+func (c *columnReaderImplBase) ReadValues(batchSize int64, out interface{}) (int, error) {
+	return c.currentDecoder.Decode(out, int(batchSize))
+}
+
+// Read up to batchSize values from the current data page into the
+// pre-allocated memory out, leaving spaces for null entries according
+// to the defLevels.
+//
+// returns: the number of values read into the out buffer
+func (c *columnReaderImplBase) ReadValuesSpaced(batchSize int64, out interface{},
+	nullCount int64, validBits []byte, validBitsOffset int64) (int, error) {
+
+	return c.currentDecoder.DecodeSpaced(out, int(batchSize), int(nullCount),
+		validBits, validBitsOffset)
+}
+
+// Read multiple definition levels into preallocated memory
+//
+// Returns the number of decoded definition levels
+func (c *columnReaderImplBase) ReadDefinitionLevels(
+	batchSize int64, levels []int16) int {
+
+	if c.maxDefLevel == 0 {
+		return 0
+	}
+	return c.definitionLevelDecoder.Decode(int(batchSize), levels)
+}
+
+func (c *columnReaderImplBase) HasNextInternal() bool {
+	// Either there is no data page available yet, or the data page has been
+	// exhausted
+	if c.numBufferedValues == 0 || c.numDecodedValues == c.numBufferedValues {
+		if !c.ReadNewPage() || c.numBufferedValues == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// Read multiple repetition levels into preallocated memory
+// Returns the number of decoded repetition levels
+func (c *columnReaderImplBase) ReadRepetitionLevels(batchSize int64, levels []int16) int {
+	if c.maxRepLevel == 0 {
+		return 0
+	}
+	return c.repetitionLevelDecoder.Decode(int(batchSize), levels)
+}
+
+// Advance to the next data page
+func (c *columnReaderImplBase) ReadNewPage() (bool, error) {
+	var err error
+	// Loop until we find the next data page.
+	for {
+		c.currentPage, err = c.pager.NextPage()
+		if err != nil {
+			return false, err
+		}
+		if c.currentPage == nil {
+			// EOS
+			return false, nil
+		}
+
+		if c.currentPage.Type() == PageType_DICTIONARY_PAGE {
+			err := c.ConfigureDictionary(c.currentPage.(*DictionaryPage))
+			if err != nil {
+				return false, err
+			}
+			continue
+		} else if c.currentPage.Type() == PageType_DATA_PAGE {
+			page := c.currentPage.(*DataPageV1)
+			levelsByteSize := c.InitializeLevelDecoders(
+				page, page.repetitionLevelEncoding, page.definitionLevelEncoding,
+			)
+			err := c.InitializeDataDecoder(page, levelsByteSize)
+			if err != nil {
+				return false, err
+			}
+			return true, nil
+		} else {
+			// We don't know what this page type is. We're allowed to skip non-data
+			// pages.
+			continue
+		}
+	}
+	return true, nil
+}
+
+func (c *columnReaderImplBase) ConfigureDictionary(page DictionaryPage) error {
+	encoding := int(page.Encoding())
+	if page.Encoding() == EncodingType_PLAIN_DICTIONARY ||
+		page.Encoding() == EncodingType_PLAIN {
+		encoding = EncodingType_RLE_DICTIONARY
+	}
+
+	if _, ok := c.decoders[encoding]; ok {
+		return fmt.Errorf(
+			"Column cannot have more than one dictionary: %w",
+			ParquetException)
+	}
+
+	if page.Encoding() == EncodingType_PLAIN_DICTIONARY ||
+		page.Encoding() == EncodingType_PLAIN {
+		dictionary, err := NewTypedDecoder(EncodingType_PLAIN, c.descr)
+		if err != nil {
+			return err
+		}
+		dictionary.SetData(int(page.NumValues()), page.Data(), page.Size())
+
+		// The dictionary is fully decoded during DictionaryDecoder::Init, so the
+		// DictionaryPage buffer is no longer required after this step
+		//
+		// TODO(nickpoorman): investigate whether this all-or-nothing decoding of the
+		// dictionary makes sense and whether performance can be improved
+
+		decoder, err := NewDictDecoder(c.descr, c.pool)
+		if err != nil {
+			return err
+		}
+		if err := decoder.SetDict(dictionary); err != nil {
+			return err
+		}
+		c.decoders[encoding] = decoder
+	} else {
+		return fmt.Errorf(
+			"only plain dictionary encoding has been implemented: %w",
+			ParquetNYIException,
+		)
+	}
+
+	c.newDictionary = true
+	c.currentDecoder = c.decoders[encoding]
+	debug.Assert(c.currentDecoder != nil, "currentDecoder must not be nil")
+
+	return nil
+}
+
+// Initialize repetition and definition level decoders on the next data page.
+//
+// If the data page includes repetition and definition levels, we
+// initialize the level decoders and return the number of encoded level bytes.
+// The return value helps determine the number of bytes in the encoded data.
+func (c *columnReaderImplBase) InitializeLevelDecoders(page DataPage,
+	repetitionLevelEncoding EncodingType,
+	definitionLevelEncoding EncodingType) (int64, error) {
+
+	// Read a data page.
+	c.numBufferedValues = int64(page.NumValues())
+
+	// Have not decoded any values from the data page yet
+	c.numDecodedValues = 0
+
+	buffer := page.Data()
+	var levelsByteSize int64
+	maxSize := int32(page.Size())
+
+	// Data page Layout: Repetition Levels - Definition Levels - encoded values.
+	// Levels are encoded as rle or bit-packed.
+	// Init repetition levels
+	if c.maxRepLevel > 0 {
+		repLevelsBytes, err := c.repetitionLevelDecoder.SetData(
+			repetitionLevelEncoding, c.maxRepLevel,
+			int(c.numBufferedValues), buffer, maxSize,
+		)
+		if err != nil {
+			return 0, err
+		}
+		buffer = buffer[repLevelsBytes:]
+		levelsByteSize += int64(repLevelsBytes)
+		maxSize -= int32(repLevelsBytes)
+	}
+	// TODO figure a way to set max_def_level_ to 0
+	// if the initial value is invalid
+
+	// Init definition levels
+	if c.maxDefLevel > 0 {
+		defLevelsBytes, err := c.definitionLevelDecoder.SetData(
+			definitionLevelEncoding, c.maxDefLevel,
+			int(c.numBufferedValues), buffer, maxSize,
+		)
+		if err != nil {
+			return 0, err
+		}
+		levelsByteSize += int64(defLevelsBytes)
+		maxSize -= int32(defLevelsBytes)
+	}
+
+	return levelsByteSize, nil
+}
+
+func (c *columnReaderImplBase) InitializeLevelDecodersV2(
+	page DataPageV2) (int64, error) {
+
+	// Read a data page.
+	c.numBufferedValues = int64(page.NumValues())
+
+	// Have not decoded any values from the data page yet
+	c.numDecodedValues = 0
+	buffer := page.Data()
+
+	totalLevelsLength := int64(page.RepetitionLevelsByteLength() +
+		page.DefinitionLevelsByteLength())
+
+	if totalLevelsLength > int64(page.Size()) {
+		return 0, fmt.Errorf(
+			"Data page too small for levels (corrupt header?): %w",
+			ParquetException,
+		)
+	}
+
+	if c.maxRepLevel > 0 {
+		c.repetitionLevelDecoder.SetDataV2(
+			int(page.RepetitionLevelsByteLength()),
+			c.maxRepLevel,
+			int(c.numBufferedValues),
+			buffer,
+		)
+		buffer = buffer[page.RepetitionLevelsByteLength():]
+	}
+
+	if c.maxDefLevel > 0 {
+		c.definitionLevelDecoder.SetDataV2(
+			int(page.DefinitionLevelsByteLength()),
+			c.maxDefLevel,
+			int(c.numBufferedValues),
+			buffer,
+		)
+	}
+
+	return totalLevelsLength, nil
+}
+
+// Get a decoder object for this page or create a new decoder if this is the
+// first page with this encoding.
+func (c *columnReaderImplBase) InitializeDataDecoder(
+	page DataPage, levelsByteSize int64) error {
+
+	buffer := page.Data()[levelsByteSize:]
+	dataSize := int64(page.Size()) - levelsByteSize
+
+	if dataSize < 0 {
+		return fmt.Errorf(
+			"Page smaller than size of encoded levels: %w",
+			ParquetException,
+		)
+	}
+
+	encoding := page.Encoding()
+
+	if isDictionaryIndexEncoding(encoding) {
+		encoding = EncodingType_RLE_DICTIONARY
+	}
+
+	dec, ok := c.decoders[int(encoding)]
+	if ok {
+		debug.Assert(dec != nil, "decoder must not be nil")
+		if encoding == EncodingType_RLE_DICTIONARY {
+			debug.Assert(
+				c.currentDecoder.Encoding() == EncodingType_RLE_DICTIONARY,
+				"encoding must be EncodingType_RLE_DICTIONARY",
+			)
+		}
+		c.currentDecoder = dec
+	} else {
+		switch encoding {
+		case EncodingType_PLAIN:
+			decoder, err := NewTypedDecoder(EncodingType_PLAIN, c.descr)
+			if err != nil {
+				return err
+			}
+			c.currentDecoder = decoder
+			c.decoders[int(encoding)] = decoder
+		case EncodingType_BYTE_STREAM_SPLIT:
+			decoder, err := NewTypedDecoder(EncodingType_BYTE_STREAM_SPLIT, c.descr)
+			if err != nil {
+				return err
+			}
+			c.currentDecoder = decoder
+			c.decoders[int(encoding)] = decoder
+		case EncodingType_RLE_DICTIONARY:
+			return fmt.Errorf("Dictionary page must be before data page: %w", ParquetException)
+		case EncodingType_DELTA_BINARY_PACKED,
+			EncodingType_DELTA_LENGTH_BYTE_ARRAY, EncodingType_DELTA_BYTE_ARRAY:
+			return fmt.Errorf(
+				"Unsupported encoding: %w",
+				ParquetNYIException,
+			)
+		default:
+			return fmt.Errorf(
+				"Unknown encoding type (%v): %w",
+				encoding,
+				ParquetException,
+			)
+		}
+	}
+	c.currentEncoding = encoding
+	c.currentDecoder.SetData(int(c.numBufferedValues), buffer, int(dataSize))
+
+	return nil
+}
+
+type typedColumnReaderImpl struct {
+	TypedColumnReader
+	columnReaderImplBase
+}
+
+func newTypedColumnReaderImpl(dtype PhysicalType,
+	descr *ColumnDescriptor, pager *PageReader,
+	pool memory.Allocator) *typedColumnReaderImpl {
+	return &typedColumnReaderImpl{
+		TypedColumnReader:    NewTypedColumnReader(),
+		columnReaderImplBase: newColumnReaderImplBase(dtype),
+	}
+}
 
 var BoolReader = NewTypedColumnReader(BooleanType)
 var Int32Reader = NewTypedColumnReader(Int32Type)
@@ -616,3 +1067,6 @@ var FloatReader = NewTypedColumnReader(FloatType)
 var DoubleReader = NewTypedColumnReader(DoubleType)
 var ByteArrayReader = NewTypedColumnReader(ByteArrayType)
 var FixedLenByteArrayReader = NewTypedColumnReader(FLBAType)
+
+var _ PageReader = (*SerializedPageReader)(nil)
+var _ ColumnReader = (*TypedColumnReader)(nil)

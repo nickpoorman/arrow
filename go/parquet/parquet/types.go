@@ -1400,6 +1400,8 @@ const (
 	EncodingType_DELTA_LENGTH_BYTE_ARRAY = 6
 	EncodingType_DELTA_BYTE_ARRAY        = 7
 	EncodingType_RLE_DICTIONARY          = 8
+	EncodingType_BYTE_STREAM_SPLIT       = 9
+	EncodingType_UNDEFINED               = 10 // Should always be last element (except UNKNOWN)
 	EncodingType_UNKNOWN                 = 999
 )
 
@@ -1661,6 +1663,8 @@ func EncodingToString(t EncodingType) string {
 		return "DELTA_BYTE_ARRAY"
 	case EncodingType_RLE_DICTIONARY:
 		return "RLE_DICTIONARY"
+	case EncodingType_BYTE_STREAM_SPLIT:
+		return "BYTE_STREAM_SPLIT"
 	default:
 		return "UNKNOWN"
 	}
