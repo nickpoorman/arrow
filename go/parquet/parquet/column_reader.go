@@ -1176,10 +1176,13 @@ func (t *typedColumnReaderImpl) ReadBatchSpaced(batchSize int64, defLevels []int
 			if err != nil {
 				return 0, err
 			}
-			bitutil.SetBitsTo(validBits, validBitsOffset,
-				/*length=*/ totalValues,
+			bitutilext.SetBitsTo(validBits, validBitsOffset,
+				/*length=*/ int64(totalValues),
 				/*bitsAreSet*/ true,
 			)
+			*valuesRead = int64(totalValues)
+		} else {
+			// TODO: Implement....
 		}
 	}
 }
