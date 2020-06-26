@@ -191,8 +191,10 @@ func SetBitsTo(bits []byte, startOffset int64, length int64, bitsAreSet bool) {
 
 	if bytesEnd == bytesBegin+1 {
 		// set bits within a single byte
-		onlyByteMask := firstByteMask
-		if iEnd%8 != 0 {
+		var onlyByteMask byte
+		if iEnd%8 == 0 {
+			onlyByteMask = firstByteMask
+		} else {
 			onlyByteMask = firstByteMask | lastByteMask
 		}
 		bits[bytesBegin] &= onlyByteMask
@@ -206,7 +208,7 @@ func SetBitsTo(bits []byte, startOffset int64, length int64, bitsAreSet bool) {
 
 	if bytesEnd-bytesBegin > 2 {
 		// set/clear whole bytes
-		memory.Set(bits[bytesBegin+1:bytesEnd-bytesBegin-2], fillByte)
+		memory.Set(bits[bytesBegin+1:bytesEnd-1], fillByte)
 	}
 
 	if iEnd%8 == 0 {
