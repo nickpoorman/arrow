@@ -145,6 +145,6 @@ func (b *Buffer) EqualsLen(right *Buffer, nbytes int) bool {
 func (b *Buffer) ZeroPadding() {
 	debug.Assert(b.mutable, "buffer not mutable")
 	if b.Cap() != 0 {
-		memory.Set(b.mutable[b.length:], 0x00)
+		Set(b.buf[b.length:], 0x00)
 	}
 }

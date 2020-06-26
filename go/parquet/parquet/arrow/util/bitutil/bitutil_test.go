@@ -152,7 +152,7 @@ func TestBitmapWriter_DoesNotWriteOutOfBounds(t *testing.T) {
 		r1.Next()
 	}
 	r1.Finish()
-	numValues = r1.position()
+	numValues = r1.Position()
 
 	testutil.AssertEqInt(t, numValues, length)
 
@@ -164,7 +164,7 @@ func TestBitmapWriter_DoesNotWriteOutOfBounds(t *testing.T) {
 		r2.Next()
 	}
 	r2.Finish()
-	numValues = r2.position()
+	numValues = r2.Position()
 
 	testutil.AssertEqInt(t, numValues, (length - 5))
 }
@@ -236,4 +236,50 @@ func TestBitUtil_ByteSwap(t *testing.T) {
 
 	testutil.AssertDeepEq(t, ByteSwap16(0), uint16(0))
 	testutil.AssertDeepEq(t, ByteSwap16(0x1122), uint16(0x2211))
+}
+
+func TestBitUtil_SetBitsTo(t *testing.T) {
+	for _, fillByte := range [2]byte{0x00, 0xff} {
+		{
+			// test set within a byte
+			bitmap := []byte{fillByte, fillByte, fillByte, fillByte}
+			SetBitsTo(bitmap, 2, 2, true)
+			SetBitsTo(bitmap, 4, 2, false)
+			testutil.AssertBytesEq(t, bitmap[:1], []byte{(fillByte & (^byte(0x3C))) | 0xC})
+		}
+		{
+			// test straddling a single byte boundary
+			bitmap := []byte{fillByte, fillByte, fillByte, fillByte}
+			SetBitsTo(bitmap, 4, 7, true)
+			SetBitsTo(bitmap, 11, 7, false)
+			testutil.AssertBytesEq(t, bitmap[:3], []byte{
+				(fillByte & 0xF) | 0xF0,
+				0x7,
+				(fillByte & (^byte(0x3))),
+			})
+		}
+		{
+			// test byte aligned end
+			bitmap := []byte{fillByte, fillByte, fillByte, fillByte}
+			SetBitsTo(bitmap, 4, 4, true)
+			SetBitsTo(bitmap, 8, 8, false)
+			testutil.AssertBytesEq(t, bitmap[:3], []byte{
+				(fillByte & 0xF) | 0xF0,
+				0x00,
+				fillByte,
+			})
+		}
+		{
+			// test byte aligned end, multiple bytes
+			bitmap := []byte{fillByte, fillByte, fillByte, fillByte}
+			SetBitsTo(bitmap, 0, 24, false)
+			falseByte := byte(0)
+			testutil.AssertBytesEq(t, bitmap, []byte{
+				falseByte,
+				falseByte,
+				falseByte,
+				fillByte,
+			})
+		}
+	}
 }

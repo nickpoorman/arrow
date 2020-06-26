@@ -765,32 +765,36 @@ func (c *columnReaderImplBase) ReadValuesSpaced(batchSize int64, out interface{}
 //
 // Returns the number of decoded definition levels
 func (c *columnReaderImplBase) ReadDefinitionLevels(
-	batchSize int64, levels []int16) int {
+	batchSize int64, levels []int16) int64 {
 
 	if c.maxDefLevel == 0 {
 		return 0
 	}
-	return c.definitionLevelDecoder.Decode(int(batchSize), levels)
+	return int64(c.definitionLevelDecoder.Decode(int(batchSize), levels))
 }
 
-func (c *columnReaderImplBase) HasNextInternal() bool {
+func (c *columnReaderImplBase) HasNextInternal() (bool, error) {
 	// Either there is no data page available yet, or the data page has been
 	// exhausted
 	if c.numBufferedValues == 0 || c.numDecodedValues == c.numBufferedValues {
-		if !c.ReadNewPage() || c.numBufferedValues == 0 {
-			return false
+		ok, err := c.ReadNewPage()
+		if err != nil {
+			return false, err
+		}
+		if !ok || c.numBufferedValues == 0 {
+			return false, nil
 		}
 	}
-	return true
+	return true, nil
 }
 
 // Read multiple repetition levels into preallocated memory
 // Returns the number of decoded repetition levels
-func (c *columnReaderImplBase) ReadRepetitionLevels(batchSize int64, levels []int16) int {
+func (c *columnReaderImplBase) ReadRepetitionLevels(batchSize int64, levels []int16) int64 {
 	if c.maxRepLevel == 0 {
 		return 0
 	}
-	return c.repetitionLevelDecoder.Decode(int(batchSize), levels)
+	return int64(c.repetitionLevelDecoder.Decode(int(batchSize), levels))
 }
 
 // Advance to the next data page
@@ -1056,6 +1060,127 @@ func newTypedColumnReaderImpl(dtype PhysicalType,
 	return &typedColumnReaderImpl{
 		TypedColumnReader:    NewTypedColumnReader(),
 		columnReaderImplBase: newColumnReaderImplBase(dtype),
+	}
+}
+
+func (t *typedColumnReaderImpl) HasNext() (bool, error) {
+	return t.HasNextInternal()
+}
+
+func (t *typedColumnReaderImpl) ReadBatch(batchSize int64, defLevels []int16,
+	repLevels []int16, values interface{}, valuesRead *int64) (int64, error) {
+
+	// HasNext invokes ReadNewPage
+	hasNext, err := t.HasNext()
+	if err != nil {
+		return 0, err
+	}
+	if !hasNext {
+		*valuesRead = 0
+		return 0, nil
+	}
+
+	// TODO(wesm): keep reading data pages until batch_size is reached, or the
+	// row group is finished
+	batchSize = u.MinInt64(batchSize, t.numBufferedValues-t.numDecodedValues)
+
+	var numDefLevels int64
+	var numRepLevels int64
+
+	var valuesToRead int64
+
+	// If the field is required and non-repeated, there are no definition levels
+	if t.maxDefLevel > 0 && len(defLevels) != 0 {
+		numDefLevels = t.ReadDefinitionLevels(batchSize, defLevels)
+		// TODO(nickpoorman): this tallying of values-to-decode can be performed with better
+		// cache-efficiency if fused with the level decoding.
+		for i := int64(0); i < numDefLevels; i++ {
+			if defLevels[i] == t.maxDefLevel {
+				valuesToRead++
+			}
+		}
+	} else {
+		// Required field, read all values
+		valuesToRead = batchSize
+	}
+
+	// Not present for non-repeated fields
+	if t.maxRepLevel > 0 && len(repLevels) != 0 {
+		numRepLevels = t.ReadRepetitionLevels(batchSize, repLevels)
+		if len(defLevels) != 0 && numDefLevels != numRepLevels {
+			return 0, fmt.Errorf(
+				"Number of decoded rep / def levels did not match: %w",
+				ParquetException,
+			)
+		}
+	}
+
+	vr, err := t.ReadValues(valuesToRead, values)
+	if err != nil {
+		return 0, err
+	}
+	*valuesRead = int64(vr)
+	totalValues := u.MaxInt64(int64(numDefLevels), *valuesRead)
+	t.consumeBufferedValues(totalValues)
+
+	return totalValues, nil
+}
+
+func (t *typedColumnReaderImpl) ReadBatchSpaced(batchSize int64, defLevels []int16,
+	repLevels []int16, values interface{}, validBits []byte, validBitsOffset int64,
+	levelsRead *int64, valuesRead *int64, nullCountOut *int64) (int64, error) {
+
+	// HasNext invokes ReadNewPage
+	hasNext, err := t.HasNext()
+	if err != nil {
+		return 0, err
+	}
+	if !hasNext {
+		*levelsRead = 0
+		*valuesRead = 0
+		*nullCountOut = 0
+		return 0, nil
+	}
+
+	var totalValues int64
+	// TODO(nickpoorman): keep reading data pages until batch_size is reached, or the
+	// row group is finished
+	batchSize = u.MinInt64(batchSize, t.numBufferedValues-t.numDecodedValues)
+
+	// If the field is required and non-repeated, there are no definition levels
+	if t.maxDefLevel > 0 {
+		numDefLevels := t.ReadDefinitionLevels(batchSize, defLevels)
+
+		// Not present for non-repeated fields
+		if t.maxRepLevel > 0 {
+			numRepLevels := t.ReadRepetitionLevels(batchSize, repLevels)
+			if numDefLevels != numRepLevels {
+				return 0, fmt.Errorf(
+					"Number of decoded rep / def levels did not match: %w",
+					ParquetException,
+				)
+			}
+		}
+
+		hasSpacedValues := HasSpacedValues(t.descr)
+
+		var nullCount int64
+		if !hasSpacedValues {
+			var valuesToRead int64
+			for i := int64(0); i < numDefLevels; i++ {
+				if defLevels[i] == t.maxDefLevel {
+					valuesToRead++
+				}
+			}
+			totalValues, err := t.ReadValues(valuesToRead, values)
+			if err != nil {
+				return 0, err
+			}
+			bitutil.SetBitsTo(validBits, validBitsOffset,
+				/*length=*/ totalValues,
+				/*bitsAreSet*/ true,
+			)
+		}
 	}
 }
 

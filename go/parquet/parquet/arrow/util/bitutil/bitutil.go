@@ -4,6 +4,16 @@ import (
 	"math/bits"
 
 	"github.com/apache/arrow/go/arrow/bitutil"
+	"github.com/apache/arrow/go/arrow/memory"
+)
+
+var (
+	// Bitmask selecting the (k - 1) preceding bits in a byte
+	kPrecedingBitmask         = [8]byte{0, 1, 3, 7, 15, 31, 63, 127}
+	kPrecedingWrappingBitmask = [8]byte{255, 1, 3, 7, 15, 31, 63, 127}
+
+	// the bitwise complement version of kPrecedingBitmask
+	kTrailingBitmask = [8]byte{255, 254, 252, 248, 240, 224, 192, 128}
 )
 
 type BitmapReader struct {
@@ -160,3 +170,50 @@ func ByteSwap64(value uint64) uint64 { return bits.ReverseBytes64(value) }
 func ByteSwap32(value uint32) uint32 { return bits.ReverseBytes32(value) }
 
 func ByteSwap16(value uint16) uint16 { return bits.ReverseBytes16(value) }
+
+func SetBitsTo(bits []byte, startOffset int64, length int64, bitsAreSet bool) {
+	if length == 0 {
+		return
+	}
+
+	iBegin := startOffset
+	iEnd := startOffset + length
+	var fillByte byte
+	if bitsAreSet {
+		fillByte = 255
+	}
+
+	bytesBegin := iBegin / 8
+	bytesEnd := iEnd/8 + 1
+
+	firstByteMask := kPrecedingBitmask[iBegin%8]
+	lastByteMask := kTrailingBitmask[iEnd%8]
+
+	if bytesEnd == bytesBegin+1 {
+		// set bits within a single byte
+		onlyByteMask := firstByteMask
+		if iEnd%8 != 0 {
+			onlyByteMask = firstByteMask | lastByteMask
+		}
+		bits[bytesBegin] &= onlyByteMask
+		bits[bytesBegin] |= (fillByte & byte(^onlyByteMask))
+		return
+	}
+
+	// set/clear trailing bits of first byte
+	bits[bytesBegin] &= firstByteMask
+	bits[bytesBegin] |= (fillByte & byte(^firstByteMask))
+
+	if bytesEnd-bytesBegin > 2 {
+		// set/clear whole bytes
+		memory.Set(bits[bytesBegin+1:bytesEnd-bytesBegin-2], fillByte)
+	}
+
+	if iEnd%8 == 0 {
+		return
+	}
+
+	// set/clear leading bits of last byte
+	bits[bytesEnd-1] &= lastByteMask
+	bits[bytesEnd-1] |= (fillByte & byte(^lastByteMask))
+}
