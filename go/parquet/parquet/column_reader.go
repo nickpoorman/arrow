@@ -538,9 +538,10 @@ func isDictionaryIndexEncoding(e EncodingType) bool {
 }
 
 type ColumnReader interface {
-	HasNext() bool
+	// Returns true if there are still values in this column.
+	HasNext() (bool, error)
 	Type() Type
-	ColumnDescriptor() *ColumnDescriptor
+	Descr() *ColumnDescriptor
 }
 
 // func NewColumnReader(dtype PhysicalType,
@@ -581,118 +582,70 @@ type ColumnReader interface {
 // }
 
 // API to read values from a single column. This is a main client facing API.
-type TypedColumnReader struct {
-	dtype PhysicalType
-}
+type TypedColumnReader interface {
 
-// func NewTypedColumnReader(dtype PhysicalType,
-// 	descr *ColumnDescriptor, pager *PageReader,
-// 	pool memory.Allocator) *TypedColumnReader {
-// 	return &TypedColumnReader{
-// 		dtype: dtype,
-// 	}
-// }
+	// Read a batch of repetition levels, definition levels, and values from the
+	// column.
+	//
+	// Since null values are not stored in the values, the number of values read
+	// may be less than the number of repetition and definition levels. With
+	// nested data this is almost certainly true.
+	//
+	// Set defLevels or repLevels to nil if you want to skip reading them.
+	// This is only safe if you know through some other source that there are no
+	// undefined values.
+	//
+	// To fully exhaust a row group, you must read batches until the number of
+	// values read reaches the number of stored values according to the metadata.
+	//
+	// This API is the same for both V1 and V2 of the DataPage
+	//
+	// returns actual number of levels read (see values_read for number of values read)
+	ReadBatch(batchSize int64, defLevels []int16, repLevels []int16,
+		values interface{}, valuesRead *int64) (int64, error)
 
-func NewTypedColumnReader(dtype PhysicalType) *TypedColumnReader {
-	return &TypedColumnReader{
-		dtype: dtype,
-	}
-}
+	// Read a batch of repetition levels, definition levels, and values from the
+	// column and leave spaces for null entries on the lowest level in the values
+	// buffer.
+	//
+	// In comparison to ReadBatch the length of repetition and definition levels
+	// is the same as of the number of values read for max_definition_level == 1.
+	// In the case of max_definition_level > 1, the repetition and definition
+	// levels are larger than the values but the values include the null entries
+	// with definition_level == (max_definition_level - 1).
+	//
+	// To fully exhaust a row group, you must read batches until the number of
+	// values read reaches the number of stored values according to the metadata.
+	//
+	//  batchSize the number of levels to read
+	//  defLevels The Parquet definition levels, output has
+	//   the length levelsRead.
+	//  repLevels The Parquet repetition levels, output has
+	//   the length levelsRead.
+	//  values The values in the lowest nested level including
+	//   spacing for nulls on the lowest levels; output has the length
+	//   valuesRead.
+	//  validBits Memory allocated for a bitmap that indicates if
+	//   the row is null or on the maximum definition level. For performance
+	//   reasons the underlying buffer should be able to store 1 bit more than
+	//   required. If this requires an additional byte, this byte is only read
+	//   but never written to.
+	//  validBitsOffset The offset in bits of the valid_bits where the
+	//   first relevant bit resides.
+	//  levelsRead The number of repetition/definition levels that were read.
+	//  valuesRead The number of values read, this includes all
+	//   non-null entries as well as all null-entries on the lowest level
+	//   (i.e. definitionLevel == maxDefinitionLevel - 1)
+	//  nullCount The number of nulls on the lowest levels.
+	//   (i.e. (valuesRead - nullCount) is total number of non-null entries)
+	ReadBatchSpaced(batchSize int64, defLevels []int16,
+		repLevels []int16, values interface{}, validBits []byte,
+		validBitsOffset int64, levelsRead *int64,
+		valuesRead *int64, nullCountOut *int64) (int64, error)
 
-// Read a batch of repetition levels, definition levels, and values from the
-// column.
-//
-// Since null values are not stored in the values, the number of values read
-// may be less than the number of repetition and definition levels. With
-// nested data this is almost certainly true.
-//
-// Set defLevels or repLevels to nil if you want to skip reading them.
-// This is only safe if you know through some other source that there are no
-// undefined values.
-//
-// To fully exhaust a row group, you must read batches until the number of
-// values read reaches the number of stored values according to the metadata.
-//
-// This API is the same for both V1 and V2 of the DataPage
-//
-// returns actual number of levels read (see values_read for number of values read)
-func (t *TypedColumnReader) ReadBatch(batchSize int64, defLevels int16, repLevels int16,
-	values interface{}, valuesRead int64) int64 {
-	panic("not yet implemented")
-}
-
-// Read a batch of repetition levels, definition levels, and values from the
-// column and leave spaces for null entries on the lowest level in the values
-// buffer.
-//
-// In comparison to ReadBatch the length of repetition and definition levels
-// is the same as of the number of values read for max_definition_level == 1.
-// In the case of max_definition_level > 1, the repetition and definition
-// levels are larger than the values but the values include the null entries
-// with definition_level == (max_definition_level - 1).
-//
-// To fully exhaust a row group, you must read batches until the number of
-// values read reaches the number of stored values according to the metadata.
-//
-//  batchSize the number of levels to read
-//  defLevels The Parquet definition levels, output has
-//   the length levelsRead.
-//  repLevels The Parquet repetition levels, output has
-//   the length levelsRead.
-//  values The values in the lowest nested level including
-//   spacing for nulls on the lowest levels; output has the length
-//   valuesRead.
-//  validBits Memory allocated for a bitmap that indicates if
-//   the row is null or on the maximum definition level. For performance
-//   reasons the underlying buffer should be able to store 1 bit more than
-//   required. If this requires an additional byte, this byte is only read
-//   but never written to.
-//  validBitsOffset The offset in bits of the valid_bits where the
-//   first relevant bit resides.
-//  levelsRead The number of repetition/definition levels that were read.
-//  valuesRead The number of values read, this includes all
-//   non-null entries as well as all null-entries on the lowest level
-//   (i.e. definitionLevel == maxDefinitionLevel - 1)
-//  nullCount The number of nulls on the lowest levels.
-//   (i.e. (valuesRead - nullCount) is total number of non-null entries)
-func (t *TypedColumnReader) ReadBatchSpaced(
-	batchsize int64, defLevels int16,
-	repLevels int16, values interface{}, validBits []byte,
-	validBitsOffset int64, levelsRead int16,
-	valuesRead int64, nullCount int64,
-) int64 {
-	panic("not yet implemented")
-}
-
-// Skip reading levels
-// Returns the number of levels skipped
-func (t *TypedColumnReader) Skip(numRowsToSkip int64) int64 {
-	panic("not yet implemented")
-}
-
-func NewColumnReader(descr *ColumnDescriptor, pager *PageReader,
-	pool memory.Allocator) (ColumnReader, error) {
-
-	switch descr.PhysicalType() {
-	case Type_BOOLEAN:
-		return newTypedColumnReaderImpl(BooleanType, descr, pager, pool)
-	case Type_INT32:
-		return newTypedColumnReaderImpl(Int32Type, descr, pager, pool)
-	case Type_INT64:
-		return newTypedColumnReaderImpl(Int64Type, descr, pager, pool)
-	case Type_INT96:
-		return newTypedColumnReaderImpl(Int96Type, descr, pager, pool)
-	case Type_FLOAT:
-		return newTypedColumnReaderImpl(FloatType, descr, pager, pool)
-	case Type_DOUBLE:
-		return newTypedColumnReaderImpl(DoubleType, descr, pager, pool)
-	case Type_BYTE_ARRAY:
-		return newTypedColumnReaderImpl(ByteArrayType, descr, pager, pool)
-	case Type_FIXED_LEN_BYTE_ARRAY:
-		return newTypedColumnReaderImpl(FLBAType, descr, pager, pool)
-	default:
-		return nil, fmt.Errorf("type reader not implemented: %w", ParquetNYIException)
-	}
+	// Skip reading levels
+	// Returns the number of levels skipped
+	Skip(numRowsToSkip int64) (int64, error)
 }
 
 type columnReaderImplBase struct {
@@ -735,6 +688,22 @@ type columnReaderImplBase struct {
 	// column chunk's data pages may include both dictionary-encoded and
 	// plain-encoded data.
 	decoders map[int]TypedDecoderInterface
+}
+
+func newColumnReaderImplBase(dtype PhysicalType, descr *ColumnDescriptor,
+	pool memory.Allocator) *columnReaderImplBase {
+
+	return &columnReaderImplBase{
+		dtype:             dtype,
+		descr:             descr,
+		maxDefLevel:       descr.MaxDefinitionLevel,
+		maxRepLevel:       descr.MaxRepetitionLevel,
+		numBufferedValues: 0,
+		numDecodedValues:  0,
+		pool:              pool,
+		currentDecoder:    nil,
+		currentEncoding:   EncodingType_UNKNOWN,
+	}
 }
 
 func (c *columnReaderImplBase) consumeBufferedValues(numValues int64) {
@@ -812,18 +781,21 @@ func (c *columnReaderImplBase) ReadNewPage() (bool, error) {
 		}
 
 		if c.currentPage.Type() == PageType_DICTIONARY_PAGE {
-			err := c.ConfigureDictionary(c.currentPage.(*DictionaryPage))
+			err := c.ConfigureDictionary(*c.currentPage.(*DictionaryPage))
 			if err != nil {
 				return false, err
 			}
 			continue
 		} else if c.currentPage.Type() == PageType_DATA_PAGE {
 			page := c.currentPage.(*DataPageV1)
-			levelsByteSize := c.InitializeLevelDecoders(
-				page, page.repetitionLevelEncoding, page.definitionLevelEncoding,
+			levelsByteSize, err := c.InitializeLevelDecoders(
+				*page.DataPage, page.repetitionLevelEncoding, page.definitionLevelEncoding,
 			)
-			err := c.InitializeDataDecoder(page, levelsByteSize)
 			if err != nil {
+				return false, err
+			}
+			if err := c.InitializeDataDecoder(
+				*page.DataPage, levelsByteSize); err != nil {
 				return false, err
 			}
 			return true, nil
@@ -1050,16 +1022,16 @@ func (c *columnReaderImplBase) InitializeDataDecoder(
 }
 
 type typedColumnReaderImpl struct {
-	TypedColumnReader
 	columnReaderImplBase
+	dtype PhysicalType
 }
 
 func newTypedColumnReaderImpl(dtype PhysicalType,
 	descr *ColumnDescriptor, pager *PageReader,
 	pool memory.Allocator) *typedColumnReaderImpl {
 	return &typedColumnReaderImpl{
-		TypedColumnReader:    NewTypedColumnReader(),
-		columnReaderImplBase: newColumnReaderImplBase(dtype),
+		columnReaderImplBase: *newColumnReaderImplBase(dtype, descr, pool),
+		dtype:                dtype,
 	}
 }
 
@@ -1080,7 +1052,7 @@ func (t *typedColumnReaderImpl) ReadBatch(batchSize int64, defLevels []int16,
 		return 0, nil
 	}
 
-	// TODO(wesm): keep reading data pages until batch_size is reached, or the
+	// TODO(nickpoorman): keep reading data pages until batch_size is reached, or the
 	// row group is finished
 	batchSize = u.MinInt64(batchSize, t.numBufferedValues-t.numDecodedValues)
 
@@ -1172,29 +1144,154 @@ func (t *typedColumnReaderImpl) ReadBatchSpaced(batchSize int64, defLevels []int
 					valuesToRead++
 				}
 			}
-			totalValues, err := t.ReadValues(valuesToRead, values)
+			tv, err := t.ReadValues(valuesToRead, values)
 			if err != nil {
 				return 0, err
 			}
+			totalValues = int64(tv)
 			bitutilext.SetBitsTo(validBits, validBitsOffset,
 				/*length=*/ int64(totalValues),
 				/*bitsAreSet*/ true,
 			)
 			*valuesRead = int64(totalValues)
 		} else {
-			// TODO: Implement....
+			DefinitionLevelsToBitmap(defLevels, numDefLevels, t.maxDefLevel,
+				t.maxRepLevel, valuesRead, &nullCount,
+				validBits, validBitsOffset,
+			)
+			tv, err := t.ReadValuesSpaced(*valuesRead, values,
+				nullCount, validBits, validBitsOffset,
+			)
+			if err != nil {
+				return 0, err
+			}
+			totalValues = int64(tv)
 		}
+		*levelsRead = numDefLevels
+		*nullCountOut = nullCount
+
+	} else {
+		// Required field, read all values
+		tv, err := t.ReadValues(batchSize, values)
+		if err != nil {
+			return 0, err
+		}
+		totalValues = int64(tv)
+		bitutilext.SetBitsTo(validBits, validBitsOffset,
+			/*length=*/ int64(totalValues),
+			/*bitsAreSet*/ true,
+		)
+		*nullCountOut = 0
+		*levelsRead = totalValues
+	}
+
+	t.consumeBufferedValues(*levelsRead)
+	return totalValues, nil
+}
+
+func (t *typedColumnReaderImpl) Skip(numRowsToSkip int64) (int64, error) {
+	rowsToSkip := numRowsToSkip
+	for {
+		hasNext, err := t.HasNext()
+		if err != nil {
+			return 0, err
+		}
+		if !hasNext {
+			break
+		}
+		if !(rowsToSkip > 0) {
+			break
+		}
+		// If the number of rows to skip is more than the number of undecoded values, skip the
+		// Page.
+		if rowsToSkip > (t.numBufferedValues - t.numDecodedValues) {
+			rowsToSkip -= t.numBufferedValues - t.numDecodedValues
+			t.numDecodedValues = t.numBufferedValues
+		} else {
+			// We need to read this Page
+			// Jump to the right offset in the Page
+			var batchSize int64 = 1024 // ReadBatch with a smaller memory footprint
+			var valuesRead int64
+
+			// This will be enough scratch space to accommodate 16-bit levels or any
+			// value type
+			scratch := AllocateBuffer(t.pool, int(batchSize)*t.dtype.typeTraits.valueByteSize)
+
+			for {
+				batchSize = u.MinInt64(batchSize, rowsToSkip)
+				// TODO(nickpoorman): Maybe we should be using the defined arrow types here?
+				mutableData := bytearray.Int16CastFromBytes(scratch.Buf())
+				values, err := t.dtype.ReinterpretCastToPrimitiveType(scratch.Buf())
+				if err != nil {
+					return 0, err
+				}
+				vr, err := t.ReadBatch(
+					batchSize,
+					mutableData,
+					mutableData,
+					values,
+					&valuesRead,
+				)
+				if err != nil {
+					return 0, err
+				}
+				valuesRead = vr
+				rowsToSkip -= valuesRead
+
+				if !(valuesRead > 0 && rowsToSkip > 0) {
+					break
+				}
+			}
+		}
+	}
+	return numRowsToSkip - rowsToSkip, nil
+}
+
+func (t *typedColumnReaderImpl) Type() Type {
+	return t.descr.PhysicalType()
+}
+
+func (t *typedColumnReaderImpl) Descr() *ColumnDescriptor {
+	return t.descr
+}
+
+// ----------------------------------------------------------------------
+// Dynamic column reader constructor
+
+func NewColumnReader(descr *ColumnDescriptor, pager *PageReader,
+	pool memory.Allocator) (ColumnReader, error) {
+
+	switch descr.PhysicalType() {
+	case Type_BOOLEAN:
+		return newTypedColumnReaderImpl(BooleanType, descr, pager, pool), nil
+	case Type_INT32:
+		return newTypedColumnReaderImpl(Int32Type, descr, pager, pool), nil
+	case Type_INT64:
+		return newTypedColumnReaderImpl(Int64Type, descr, pager, pool), nil
+	case Type_INT96:
+		return newTypedColumnReaderImpl(Int96Type, descr, pager, pool), nil
+	case Type_FLOAT:
+		return newTypedColumnReaderImpl(FloatType, descr, pager, pool), nil
+	case Type_DOUBLE:
+		return newTypedColumnReaderImpl(DoubleType, descr, pager, pool), nil
+	case Type_BYTE_ARRAY:
+		return newTypedColumnReaderImpl(ByteArrayType, descr, pager, pool), nil
+	case Type_FIXED_LEN_BYTE_ARRAY:
+		return newTypedColumnReaderImpl(FLBAType, descr, pager, pool), nil
+	default:
+		return nil, fmt.Errorf("type reader not implemented: %w", ParquetNYIException)
 	}
 }
 
-var BoolReader = NewTypedColumnReader(BooleanType)
-var Int32Reader = NewTypedColumnReader(Int32Type)
-var Int64Reader = NewTypedColumnReader(Int64Type)
-var Int96Reader = NewTypedColumnReader(Int96Type)
-var FloatReader = NewTypedColumnReader(FloatType)
-var DoubleReader = NewTypedColumnReader(DoubleType)
-var ByteArrayReader = NewTypedColumnReader(ByteArrayType)
-var FixedLenByteArrayReader = NewTypedColumnReader(FLBAType)
+// var BoolReader = NewTypedColumnReader(BooleanType)
+// var Int32Reader = NewTypedColumnReader(Int32Type)
+// var Int64Reader = NewTypedColumnReader(Int64Type)
+// var Int96Reader = NewTypedColumnReader(Int96Type)
+// var FloatReader = NewTypedColumnReader(FloatType)
+// var DoubleReader = NewTypedColumnReader(DoubleType)
+// var ByteArrayReader = NewTypedColumnReader(ByteArrayType)
+// var FixedLenByteArrayReader = NewTypedColumnReader(FLBAType)
 
 var _ PageReader = (*SerializedPageReader)(nil)
-var _ ColumnReader = (*TypedColumnReader)(nil)
+var _ TypedColumnReader = (*typedColumnReaderImpl)(nil)
+var _ ColumnReader = (*typedColumnReaderImpl)(nil)

@@ -11,6 +11,7 @@ import (
 	"math"
 	"reflect"
 
+	"github.com/nickpoorman/arrow-parquet-go/internal/bytearray"
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 	"github.com/nickpoorman/arrow-parquet-go/parquet/compress"
 	"github.com/xitongsys/parquet-go/parquet"
@@ -1634,6 +1635,36 @@ func (p PhysicalType) typeNum() Type {
 
 func (p PhysicalType) Name() string {
 	return p.name
+}
+
+func (p PhysicalType) ReinterpretCastToPrimitiveType(b []byte) (interface{}, error) {
+	switch p.dtype {
+	case Type_BOOLEAN:
+		return bytearray.BoolCastFromBytes(b), nil
+	case Type_INT32:
+		return bytearray.Int32CastFromBytes(b), nil
+	case Type_INT64:
+		return bytearray.Int64CastFromBytes(b), nil
+	case Type_INT96:
+		return b, fmt.Errorf(
+			"PhysicalType ReinterpretCastToPrimitiveType unsupported Type_INT96: %w",
+			ParquetException,
+		)
+	case Type_FLOAT:
+		return bytearray.Float32CastFromBytes(b), nil
+	case Type_DOUBLE:
+		return bytearray.Float64CastFromBytes(b), nil
+	case Type_BYTE_ARRAY:
+		return b, nil
+	case Type_FIXED_LEN_BYTE_ARRAY:
+		return b, nil
+	default:
+		return b, fmt.Errorf(
+			"PhysicalType ReinterpretCastToPrimitiveType unhandled Type: %d: %w",
+			p.dtype,
+			ParquetException,
+		)
+	}
 }
 
 var BooleanType = PhysicalType{typeTraitsBoolean, Type_BOOLEAN, "BooleanType"}

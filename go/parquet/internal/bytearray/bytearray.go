@@ -391,6 +391,18 @@ func BoolCastToBytes(b []bool) []byte {
 	return res
 }
 
+func BoolCastFromBytes(b []byte) []bool {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []bool
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / BoolSize
+	s.Cap = h.Cap / BoolSize
+
+	return res
+}
+
 func Uint8CastToBytes(b []uint8) []byte {
 	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
 
@@ -399,6 +411,18 @@ func Uint8CastToBytes(b []uint8) []byte {
 	s.Data = h.Data
 	s.Len = h.Len * Uint8Size
 	s.Cap = h.Cap * Uint8Size
+
+	return res
+}
+
+func Uint8CastFromBytes(b []byte) []uint8 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []uint8
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Uint8Size
+	s.Cap = h.Cap / Uint8Size
 
 	return res
 }
@@ -415,6 +439,18 @@ func Uint16CastToBytes(b []uint16) []byte {
 	return res
 }
 
+func Uint16CastFromBytes(b []byte) []uint16 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []uint16
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Uint16Size
+	s.Cap = h.Cap / Uint16Size
+
+	return res
+}
+
 func Uint32CastToBytes(b []uint32) []byte {
 	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
 
@@ -423,6 +459,18 @@ func Uint32CastToBytes(b []uint32) []byte {
 	s.Data = h.Data
 	s.Len = h.Len * Uint32Size
 	s.Cap = h.Cap * Uint32Size
+
+	return res
+}
+
+func Uint32CastFromBytes(b []byte) []uint32 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []uint32
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Uint32Size
+	s.Cap = h.Cap / Uint32Size
 
 	return res
 }
@@ -439,6 +487,18 @@ func Uint64CastToBytes(b []uint64) []byte {
 	return res
 }
 
+func Uint64CastFromBytes(b []byte) []uint64 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []uint64
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Uint64Size
+	s.Cap = h.Cap / Uint64Size
+
+	return res
+}
+
 func Int8CastToBytes(b []int8) []byte {
 	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
 
@@ -447,6 +507,18 @@ func Int8CastToBytes(b []int8) []byte {
 	s.Data = h.Data
 	s.Len = h.Len * Int8Size
 	s.Cap = h.Cap * Int8Size
+
+	return res
+}
+
+func Int8CastFromBytes(b []byte) []int8 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []int8
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Int8Size
+	s.Cap = h.Cap / Int8Size
 
 	return res
 }
@@ -463,6 +535,18 @@ func Int16CastToBytes(b []int16) []byte {
 	return res
 }
 
+func Int16CastFromBytes(b []byte) []int16 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []int16
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Int16Size
+	s.Cap = h.Cap / Int16Size
+
+	return res
+}
+
 func Int32CastToBytes(b []int32) []byte {
 	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
 
@@ -471,6 +555,18 @@ func Int32CastToBytes(b []int32) []byte {
 	s.Data = h.Data
 	s.Len = h.Len * Int32Size
 	s.Cap = h.Cap * Int32Size
+
+	return res
+}
+
+func Int32CastFromBytes(b []byte) []int32 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []int32
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Int32Size
+	s.Cap = h.Cap / Int32Size
 
 	return res
 }
@@ -487,6 +583,18 @@ func Int64CastToBytes(b []int64) []byte {
 	return res
 }
 
+func Int64CastFromBytes(b []byte) []int64 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []int64
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Int64Size
+	s.Cap = h.Cap / Int64Size
+
+	return res
+}
+
 func IntCastToBytes(b []int) []byte {
 	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
 
@@ -495,6 +603,18 @@ func IntCastToBytes(b []int) []byte {
 	s.Data = h.Data
 	s.Len = h.Len * IntSize
 	s.Cap = h.Cap * IntSize
+
+	return res
+}
+
+func IntCastFromBytes(b []byte) []int {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []int
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / IntSize
+	s.Cap = h.Cap / IntSize
 
 	return res
 }
@@ -511,6 +631,18 @@ func Float32CastToBytes(b []float32) []byte {
 	return res
 }
 
+func Float32CastFromBytes(b []byte) []float32 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []float32
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Uint32Size
+	s.Cap = h.Cap / Uint32Size
+
+	return res
+}
+
 func Float64CastToBytes(b []float64) []byte {
 	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
 
@@ -519,6 +651,18 @@ func Float64CastToBytes(b []float64) []byte {
 	s.Data = h.Data
 	s.Len = h.Len * Uint64Size
 	s.Cap = h.Cap * Uint64Size
+
+	return res
+}
+
+func Float64CastFromBytes(b []byte) []float64 {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []float64
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / Uint64Size
+	s.Cap = h.Cap / Uint64Size
 
 	return res
 }
