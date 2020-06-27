@@ -12,6 +12,7 @@ import (
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 	u "github.com/nickpoorman/arrow-parquet-go/internal/util"
 	arrowext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow"
+	bitutilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util/bitutil"
 )
 
 // The minimum number of repetition/definition levels to decode at a time, for
@@ -134,15 +135,16 @@ func (r *RecordReader) ReadDictionary() bool {
 	return r.readDictionary
 }
 
-type BinaryRecordReader struct {
-	RecordReader
-}
+// TODO: Remove...
+// type BinaryRecordReader struct {
+// 	RecordReader
+// }
 
-func NewBinaryRecordReader() *BinaryRecordReader {
-	return &BinaryRecordReader{}
-}
+// func NewBinaryRecordReader() *BinaryRecordReader {
+// 	return &BinaryRecordReader{}
+// }
 
-func (b *BinaryRecordReader) GetBuilderChunks() []array.Interface {}
+// func (b *BinaryRecordReader) GetBuilderChunks() []array.Interface {}
 
 // Read records directly to dictionary-encoded Arrow form (int32
 // indices). Only valid for BYTE_ARRAY columns
@@ -652,4 +654,83 @@ func (t *TypedRecordReader) ValuesHead() (interface{}, error) {
 	}
 	rVals := reflect.ValueOf(vals)
 	return rVals.Slice(int(t.valuesWritten), rVals.Len()).Interface(), nil
+}
+
+type FLBARecordReader struct {
+	TypedRecordReader
+	BinaryRecordReader
+
+	builder *array.FixedSizeBinaryBuilder
+}
+
+func NewFLBARecordReader(
+	descr *ColumnDescriptor, pool memory.Allocator) *FLBARecordReader {
+
+	rr := &FLBARecordReader{
+		TypedRecordReader:  *NewTypedRecordReader(FLBAType, descr, pool),
+		BinaryRecordReader: *NewBinaryRecordReader(),
+	}
+	debug.Assert(
+		descr.PhysicalType() == Type_FIXED_LEN_BYTE_ARRAY,
+		"Assert: descr.PhysicalType() == Type_FIXED_LEN_BYTE_ARRAY",
+	)
+	byteWidth := descr.typeLength()
+	rr.builder = array.NewFixedSizeBinaryBuilder(pool,
+		&arrow.FixedSizeBinaryType{ByteWidth: byteWidth})
+	return rr
+}
+
+// Override for faster implementation.
+// We know we're dealing with bytes so we can skip the reflect.
+func (f *FLBARecordReader) ValuesHead() []byte {
+	return f.TypedRecordReader.values.Buf()[f.TypedRecordReader.valuesWritten:]
+}
+
+func (f *FLBARecordReader) GetBuilderChunks() []array.Interface {
+	return []array.Interface{f.builder.NewFixedSizeBinaryArray()}
+}
+
+func (f *FLBARecordReader) ReadValuesDense(valuesToRead int64) error {
+	values := f.ValuesHead()
+	numDecoded, err := f.currentDecoder.Decode(values, int(valuesToRead))
+	if err != nil {
+		return err
+	}
+	debug.Assert(int64(numDecoded) == valuesToRead,
+		"Assert: numDecoded == valuesToRead")
+
+	f.builder.Append(values[:numDecoded])
+
+	f.ResetValues()
+	return nil
+}
+
+func (f *FLBARecordReader) ReadValuesSpaced(valuesToRead int64, nullCount int64) error {
+	validBits := f.validBits.Buf()
+	validBitsOffset := f.valuesWritten
+
+	values := f.ValuesHead()
+
+	numDecoded, err := f.currentDecoder.DecodeSpaced(
+		values, int(valuesToRead), int(nullCount), validBits, validBitsOffset,
+	)
+	if err != nil {
+		return err
+	}
+	debug.Assert(int64(numDecoded) == valuesToRead,
+		"Assert: numDecoded == valuesToRead")
+
+	for i := 0; i < numDecoded; i++ {
+		if bitutilext.GetBit(validBits, uint64(validBitsOffset+int64(i))) {
+			f.builder.Append(values[i : i+1])
+		} else {
+			f.builder.AppendNull()
+		}
+	}
+	f.ResetValues()
+	return nil
+}
+
+type ByteArrayChunkedRecordReader struct {
+	// TODO: Implement...
 }

@@ -219,3 +219,7 @@ func SetBitsTo(bits []byte, startOffset int64, length int64, bitsAreSet bool) {
 	bits[bytesEnd-1] &= lastByteMask
 	bits[bytesEnd-1] |= (fillByte & byte(^lastByteMask))
 }
+
+func GetBit(bits []byte, i uint64) bool {
+	return ((bits[i>>3] >> (i & 0x07)) & 1) != 0
+}
