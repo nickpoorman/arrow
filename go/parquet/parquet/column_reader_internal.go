@@ -731,6 +731,66 @@ func (f *FLBARecordReader) ReadValuesSpaced(valuesToRead int64, nullCount int64)
 	return nil
 }
 
-type ByteArrayChunkedRecordReader struct {
-	// TODO: Implement...
+// ByteArrayChunkedReader
+type ByteArrayChunkedReader struct {
+	TypedRecordReader
+	// Helper data structure for accumulating builder chunks
+	accumulator *Accumulator
+}
+
+// NewByteArrayChunkedReader creates a new ByteArrayChunkedReader struct.
+func NewByteArrayChunkedReader(dtype PhysicalType, descr *ColumnDescriptor,
+	pool memory.Allocator) *ByteArrayChunkedReader {
+	debug.Assert(descr.PhysicalType() == Type_BYTE_ARRAY,
+		"Assert: descr.PhysicalType() == Type_BYTE_ARRAY")
+
+	return &ByteArrayChunkedReader{
+		TypedRecordReader: *NewTypedRecordReader(dtype, descr, pool),
+		accumulator: ByteArrayEncodingTraits.Accumulator(
+			pool, arrow.BinaryTypes.Binary),
+	}
+}
+
+// GetBuilderChunks
+func (b *ByteArrayChunkedReader) GetBuilderChunks() []array.Interface {
+	result := b.accumulator.Chunks
+	if len(result) == 0 || b.accumulator.Builder.Len() > 0 {
+		lastChunk := b.accumulator.Builder.NewArray()
+		result = append(result, lastChunk)
+	}
+	b.accumulator.Chunks = make([]array.Interface, 0)
+	return result
+}
+
+// ReadValuesDense
+func (b *ByteArrayChunkedReader) ReadValuesDense(
+	valuesToRead int64, nullCount int64) error {
+	numDecoded, err := b.currentDecoder.DecodeArrowNonNull(
+		int(valuesToRead), b.accumulator,
+	)
+	if err != nil {
+		return err
+	}
+	debug.Assert(int64(numDecoded) == valuesToRead-nullCount,
+		"Assert: int64(numDecoded) == valuesToRead-nullCount",
+	)
+	b.ResetValues()
+	return nil
+}
+
+// ReadValuesSpaced
+func (b *ByteArrayChunkedReader) ReadValuesSpaced(
+	valuesToRead int64, nullCount int64) error {
+
+	numDecoded, err := b.currentDecoder.DecodeArrow(
+		int(valuesToRead), int(nullCount),
+		b.validBits.Buf(), int(b.valuesWritten), b.accumulator,
+	)
+	if err != nil {
+		return err
+	}
+	debug.Assert(int64(numDecoded) == valuesToRead-nullCount,
+		"Assert: int64(numDecoded) == valuesToRead - nullCount")
+	b.ResetValues()
+	return nil
 }

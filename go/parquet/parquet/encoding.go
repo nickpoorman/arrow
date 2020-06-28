@@ -128,22 +128,22 @@ type TypedDecoderInterface interface {
 	// Decode into an ArrayBuilder or other accumulator
 	//
 	// returns number of values decoded
-	// DecodeArrow(numValues int, nullCount int, validBits []byte, validBitsOffset int, out *Accumulator) (int, error)
+	DecodeArrow(numValues int, nullCount int, validBits []byte, validBitsOffset int, out *Accumulator) (int, error)
 
 	// Decode into an ArrayBuilder or other accumulator ignoring nulls
 	//
 	// returns number of values decoded
-	// DecodeArrowNonNull(numValues int, out *Accumulator) (int, error)
+	DecodeArrowNonNull(numValues int, out *Accumulator) (int, error)
 
 	// Decode into a DictionaryBuilder
 	//
 	// return number of values decoded
-	// DecodeArrow(numValues int, nullCount int, validBits []byte, validBitsOffset int, builder *DictAccumulator) (int, error)
+	// DecodeArrowDict(numValues int, nullCount int, validBits []byte, validBitsOffset int, builder *DictAccumulator) (int, error)
 
 	// Decode into a DictionaryBuilder ignoring nulls
 	//
 	// returns number of values decoded
-	// DecodeArrowNonNull(numValues int, builder *DictAccumulator, validBits []byte) (int, error) // return DecodeArrow(num_values, 0, &valid_bits, 0, builder)
+	// DecodeArrowDictNonNull(numValues int, builder *DictAccumulator, validBits []byte) (int, error) // return DecodeArrow(num_values, 0, &valid_bits, 0, builder)
 }
 
 type DictDecoder interface {
