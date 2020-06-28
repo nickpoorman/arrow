@@ -17,7 +17,15 @@
 package arrow
 
 import (
+	"reflect"
+	"unsafe"
+
 	"github.com/apache/arrow/go/arrow/bitutil"
+)
+
+const (
+	// BooleanSizeBytes specifies the number of bytes required to store a single bool in memory
+	BooleanSizeBytes = int(unsafe.Sizeof(bool(false)))
 )
 
 type booleanTraits struct{}
@@ -39,4 +47,32 @@ func (booleanTraits) PutValue(b []byte, v bool) {
 // GetValue returns a single bool from the slice of bytes b.
 func (booleanTraits) GetValue(b []byte) bool {
 	return b[0] != 0
+}
+
+// CastFromBytes reinterprets the slice b to a slice of type bool.
+//
+// NOTE: len(b) must be a multiple of BooleanSizeBytes.
+func (booleanTraits) CastFromBytes(b []byte) []bool {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []bool
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len / BooleanSizeBytes
+	s.Cap = h.Cap / BooleanSizeBytes
+
+	return res
+}
+
+// CastToBytes reinterprets the slice b to a slice of bytes.
+func (booleanTraits) CastToBytes(b []bool) []byte {
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&b))
+
+	var res []byte
+	s := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	s.Data = h.Data
+	s.Len = h.Len * BooleanSizeBytes
+	s.Cap = h.Cap * BooleanSizeBytes
+
+	return res
 }

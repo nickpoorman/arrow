@@ -3,67 +3,87 @@ package parquet
 import (
 	"encoding/binary"
 	"fmt"
+	"unsafe"
 
 	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/array"
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 	"github.com/nickpoorman/arrow-parquet-go/internal/util"
+	arrowext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow"
 	utilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util"
 	bitutilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util/bitutil"
 )
 
+const kInMemoryDefaultCapacity int64 = 1024
+
 // The ColumnReader that will create these will have a physical type on the ColumnDescriptor.
 // Instead of creating one for each possible type, lets build logic off the physical type.
-
-// If it has a specific underlying type then we need an interface for it
-// Encoder
-//  |_ encoderBase
-// TypedEncoder
-//  |_ BooleanEncoder < TypedEncoder < encoderBase
-// PlainEncoder
-//  |_ BooleanPlainEncoder < BooleanEncoder
-
-// ------------ New layout below
-
-// Encoder
-//  |_ encoderBase
-// PlainEncoder
-//  |_ BooleanPlainEncoder < encoderBase
 
 type Encoder interface {
 	// From encoderBase
 	Encoding() EncodingType
 	MemoryPool() memory.Allocator
+
+	// void Put(const arrow::Array& values) override;
+	PutArrowArray(values array.Interface) error
 }
 
-// type TypedEncoder interface {
-// 	Encoder
+type TypedEncoder interface {
+	Encoder
 
-// 	PutBuffer(buffer interface{}, numValues int) error
-// 	PutVector(src []interface{}, numValues int) error
-// 	PutSpaced(src interface{}, numValues int, validBits []byte, validBitsOffset int64) error
+	// virtual void Put(const T* src, int num_values) = 0;
+	// void Put(const T* buffer, int num_values) override;
+	PutPhysical(src interface{}, numValues int) error
+	// virtual void Put(const std::vector<T>& src, int num_values = -1);
+	PutPhysicals(src []interface{}, numValues int) error
+
+	// PutBuffer(buffer []byte, numValues int) error
+
+	// void PutSpaced(const T* src, int num_values, const uint8_t* valid_bits, int64_t valid_bits_offset)
+	PutSpacedPhysical(src interface{}, numValues int, validBits []byte, validBitsOffset int64) error
+}
+
+// TODO: Probably just implement this on the types
+// func typedEncoderPutPhysicals(dtype PhysicalType, src []interface{}, numValues int, put func([]byte, int) error) error {
+// 	if numValues == -1 {
+// 		numValues = len(src)
+// 	}
+// 	return put(src, numValues)
 // }
 
-type PlainEncoder interface {
-	// TypedEncoder
-	Put(src interface{}, numValues int) error
-	PutSpaced(src interface{}, validBits []byte, validBitsOffset int) error
+type DictEncoder interface {
+	TypedEncoder
+	// Writes out any buffered indices to buffer preceded by the bit width of this data.
+	// Returns the number of bytes written.
+	// If the supplied buffer is not big enough, returns -1.
+	// buffer must be preallocated with buffer_len bytes. Use EstimatedDataEncodedSize()
+	// to size buffer.
+	WriteIndices(buffer []byte, bufferLen int)
 
-	EstimatedDataEncodedSize() int
-	FlushValues() *memory.Buffer
-	PutArrowArray(values array.Interface) error
-}
+	dictEncodedSize() int
 
-// TODO: Fix comment below after verify
-// TypedEncoder can be a PlainEncoder or a DictEncoder?
-type TypedEncoderInterface interface {
-	Put(src interface{}, numValues int) error
-	PutSpaced(src interface{}, validBits []byte, validBitsOffset int) error
+	bitWidth() int
 
-	EstimatedDataEncodedSize() int
-	FlushValues() *memory.Buffer
-	PutArrowArray(values array.Interface) error
+	// Writes out the encoded dictionary to buffer. buffer must be preallocated to
+	// dictEncodedSize() bytes.
+	WriteDict(buffer []byte)
+
+	numEntires() int
+
+	// EXPERIMENTAL: Append dictionary indices into the encoder. It is
+	// assumed (without any boundschecking) that the indices reference
+	// pre-existing dictionary values
+	// indices are the dictionary index values. Only Int32Array currently
+	// supported
+	PutIndices(indicies array.Interface)
+
+	// EXPERIMENTAL: Append dictionary into encoder, inserting indices
+	// separately. Currently throws exception if the current dictionary memo is
+	// non-empty
+	// values are the dictionary values. Only valid for certain
+	// Parquet/Arrow type combinations, like BYTE_ARRAY/BinaryArray
+	PutDictionary(values array.Interface)
 }
 
 type Decoder interface {
@@ -99,7 +119,7 @@ type Decoder interface {
 	// 	validBits []byte, validBitsOffset int) (int, error)
 }
 
-type TypedDecoderInterface interface {
+type TypedDecoder interface {
 	Decoder
 
 	// Decode values into a buffer
@@ -107,11 +127,10 @@ type TypedDecoderInterface interface {
 	// Subclasses may override the more specialized Decode methods below.
 	//
 	// buffer - destination for decoded values
-	// maxBalues - maximum number of values to decode
+	// maxValues - maximum number of values to decode
 	// returns the number of values decoded. Should be identical to maxValues except
 	// at the end of the current data page.
-	// DecodeBuffer(buffer interface{}, makeValues int) (int, error)
-	Decode(buffer interface{}, numValues int) (int, error)
+	Decode(buffer []byte, maxValues int) (int, error)
 
 	// Decode the values in this data page but leave spaces for null entries.
 	//
@@ -122,13 +141,14 @@ type TypedDecoderInterface interface {
 	// validBits - bitmap data indicating position of valid slots
 	// validBitsOffset - offset into valid_bits
 	// returns the number of values decoded, including nulls.
-	DecodeSpaced(buffer interface{}, numValues int, nullCount int,
+	DecodeSpaced(buffer []byte, numValues int, nullCount int,
 		validBits []byte, validBitsOffset int64) (int, error)
 
 	// Decode into an ArrayBuilder or other accumulator
 	//
 	// returns number of values decoded
-	DecodeArrow(numValues int, nullCount int, validBits []byte, validBitsOffset int, out *Accumulator) (int, error)
+	DecodeArrow(numValues int, nullCount int, validBits []byte,
+		validBitsOffset int, out *Accumulator) (int, error)
 
 	// Decode into an ArrayBuilder or other accumulator ignoring nulls
 	//
@@ -147,17 +167,237 @@ type TypedDecoderInterface interface {
 }
 
 type DictDecoder interface {
-	TypedDecoderInterface
+	TypedDecoder
 
-	SetDict(dictionary TypedDecoderInterface) error
+	SetDict(dictionary TypedDecoder) error
+
+	// Insert dictionary values into the Arrow dictionary builder's memo,
+	// but do not append any indices
+	InsertDictionary(builder array.Builder)
+
+	// Decode only dictionary indices and append to dictionary
+	// builder. The builder must have had the dictionary from this decoder
+	// inserted already.
+	//
+	// warning: Remember to reset the builder each time the dict decoder is initialized
+	// with a new dictionary page
+	DecodeIndicesSpaced(numValues int, nullCount int,
+		validBits []byte, validBitsOffset int64,
+		builder array.Builder) (int, error)
+
+	// Decode only dictionary indices (no nulls)
+	//
+	// warning: Remember to reset the builder each time the dict decoder is initialized
+	// with a new dictionary page
+	DecodeIndices(numValues int, builder array.Builder) (int, error)
+}
+
+// ----------------------------------------------------------------------
+// TypedEncoder specializations, traits, and factory functions
+
+// BooleanDecoder
+type BooleanDecoder struct {
+	dtype PhysicalType
+}
+
+// NewBooleanDecoder creates a new BooleanDecoder struct.
+func NewBooleanDecoder() *BooleanDecoder {
+	return &BooleanDecoder{
+		dtype: BooleanType,
+	}
+}
+
+// Decode
+func (b *BooleanDecoder) Decode(buffer []byte, maxValues int) (int, error) {
+	panic(ParquetNYIException)
+}
+
+// FLBADecoder
+type FLBADecoder struct {
+	dtype PhysicalType
+}
+
+// NewFLBADecoder creates a new FLBADecoder struct.
+func NewFLBADecoder() *FLBADecoder {
+	return &FLBADecoder{
+		dtype: FLBAType,
+	}
+}
+
+func (b *FLBADecoder) DecodeSpaced(buffer []byte, numValues int, nullCount int,
+	validBits []byte, validBitsOffset int64) (int, error) {
+	panic(ParquetNYIException)
+}
+
+func MakeEncoder(
+	typeNum Type, encoding EncodingType, useDictionary bool,
+	descr *ColumnDescriptor, pool memory.Allocator) (Encoder, error) {
+	if useDictionary {
+		switch typeNum {
+		case Type_INT32:
+			return NewDictEncoderImpl(Int32Type, descr, pool)
+		case Type_INT64:
+			return NewDictEncoderImpl(Int64Type, descr, pool)
+		case Type_INT96:
+			return NewDictEncoderImpl(Int96Type, descr, pool)
+		case Type_FLOAT:
+			return NewDictEncoderImpl(FloatType, descr, pool)
+		case Type_DOUBLE:
+			return NewDictEncoderImpl(DoubleType, descr, pool)
+		case Type_BYTE_ARRAY:
+			return NewDictEncoderImpl(ByteArrayType, descr, pool)
+		case Type_FIXED_LEN_BYTE_ARRAY:
+			return NewDictEncoderImpl(FLBAType, descr, pool)
+		default:
+			return nil, fmt.Errorf(
+				"Encoder not implemented for type (%d): %w",
+				typeNum,
+				ParquetException,
+			)
+		}
+	} else if encoding == EncodingType_PLAIN {
+		switch typeNum {
+		case Type_BOOLEAN:
+			return NewPlainEncoder(BooleanType, descr, pool)
+		case Type_INT32:
+			return NewPlainEncoder(Int32Type, descr, pool)
+		case Type_INT64:
+			return NewPlainEncoder(Int64Type, descr, pool)
+		case Type_INT96:
+			return NewPlainEncoder(Int96Type, descr, pool)
+		case Type_FLOAT:
+			return NewPlainEncoder(FloatType, descr, pool)
+		case Type_DOUBLE:
+			return NewPlainEncoder(DoubleType, descr, pool)
+		case Type_BYTE_ARRAY:
+			return NewPlainEncoder(ByteArrayType, descr, pool)
+		case Type_FIXED_LEN_BYTE_ARRAY:
+			return NewPlainEncoder(FLBAType, descr, pool)
+		default:
+			return nil, fmt.Errorf(
+				"Encoder not implemented for type (%d): %w",
+				typeNum,
+				ParquetException,
+			)
+		}
+	} else if encoding == EncodingType_BYTE_STREAM_SPLIT {
+		switch typeNum {
+		case Type_FLOAT:
+		case Type_DOUBLE:
+		default:
+			return nil, fmt.Errorf(
+				"BYTE_STREAM_SPLIT only supports FLOAT and DOUBLE: %w",
+				ParquetException,
+			)
+		}
+	} else {
+		return nil, fmt.Errorf(
+			"Selected encoding is not supported: %w",
+			ParquetNYIException,
+		)
+	}
+}
+
+func MakeTypedEncoder(
+	dtype PhysicalType, encoding EncodingType, useDictionary bool,
+	descr *ColumnDescriptor, pool memory.Allocator) (Encoder, error) {
+	return MakeEncoder(dtype.typeNum(), encoding, useDictionary, descr, pool)
+}
+
+func MakeDecoder(
+	typeNum Type, encoding EncodingType,
+	descr *ColumnDescriptor) (Decoder, error) {
+	if encoding == EncodingType_PLAIN {
+		switch typeNum {
+		case Type_BOOLEAN:
+			return NewPlainBooleanDecoder(descr), nil
+		case Type_INT32:
+			return NewPlainDecoder(Int32Type, descr), nil
+		case Type_INT64:
+			return NewPlainDecoder(Int64Type, descr), nil
+		case Type_INT96:
+			return NewPlainDecoder(Int96Type, descr), nil
+		case Type_FLOAT:
+			return NewPlainDecoder(FloatType, descr), nil
+		case Type_DOUBLE:
+			return NewPlainDecoder(DoubleType, descr), nil
+		case Type_BYTE_ARRAY:
+			return NewPlainByteArrayDecoder(descr), nil
+		case Type_FIXED_LEN_BYTE_ARRAY:
+			return NewPlainFLBADecoder(descr), nil
+		default:
+			return nil, fmt.Errorf(
+				"Selected encoding is not supported for type (%d): %w",
+				typeNum,
+				ParquetException,
+			)
+		}
+	} else if encoding == EncodingType_BYTE_STREAM_SPLIT {
+		switch typeNum {
+		case Type_FLOAT:
+		case Type_DOUBLE:
+		default:
+			return nil, fmt.Errorf(
+				"BYTE_STREAM_SPLIT only supports FLOAT and DOUBLE: %w",
+				ParquetException,
+			)
+		}
+	} else {
+		return nil, fmt.Errorf(
+			"Selected encoding is not supported: %w",
+			ParquetNYIException,
+		)
+	}
+}
+
+func MakeDictDecoderDetail(
+	typeNum Type, descr *ColumnDescriptor,
+	pool memory.Allocator) (Decoder, error) {
+	switch typeNum {
+	case Type_BOOLEAN:
+		return nil, fmt.Errorf(
+			"Dictionary encoding not implemented for boolean type: %w",
+			ParquetNYIException,
+		)
+	case Type_INT32:
+		return NewDictDecoderImpl(Int32Type, descr, pool), nil
+	case Type_INT64:
+		return NewDictDecoderImpl(Int64Type, descr, pool), nil
+	case Type_INT96:
+		return NewDictDecoderImpl(Int96Type, descr, pool), nil
+	case Type_FLOAT:
+		return NewDictDecoderImpl(FloatType, descr, pool), nil
+	case Type_DOUBLE:
+		return NewDictDecoderImpl(DoubleType, descr, pool), nil
+	case Type_BYTE_ARRAY:
+		return NewByteArrayDecoderImpl(ByteArrayType, descr, pool), nil
+	case Type_FIXED_LEN_BYTE_ARRAY:
+		return NewDictDecoderImpl(FLBAType, descr, pool), nil
+	default:
+		return nil, fmt.Errorf(
+			"Unknown Type (%d): %w",
+			typeNum,
+			ParquetException,
+		)
+	}
+}
+
+func MakeDictDecoder(
+	dtype PhysicalType, descr *ColumnDescriptor,
+	pool memory.Allocator) (DictDecoder, error) {
+	return MakeDictDecoderDetail(dtype.typeNum(), descr, pool)
+}
+
+func MakeTypedDecoder(
+	dtype PhysicalType, encoding EncodingType,
+	descr *ColumnDescriptor) (Decoder, error) {
+	return MakeDecoder(dtype.typeNum(), encoding, descr)
 }
 
 // ----------------------------------------------------------------------
 // Base encoder implementation
 
-type encoderBase struct {
-	encodingTraits EncodingTraits
-
+type EncoderImpl struct {
 	// For accessing type-specific metadata, like FIXED_LEN_BYTE_ARRAY
 	descr *ColumnDescriptor
 	enc   EncodingType
@@ -167,100 +407,187 @@ type encoderBase struct {
 	typeLength int
 }
 
-func newEncoderBase(
-	encodingTraits EncodingTraits, descr *ColumnDescriptor,
-	encoding EncodingType, pool memory.Allocator) encoderBase {
+func NewEncoderImpl(
+	descr *ColumnDescriptor,
+	encoding EncodingType, pool memory.Allocator) EncoderImpl {
 
 	typeLength := -1
 	if descr != nil {
 		typeLength = descr.typeLength()
 	}
-	return encoderBase{
-		encodingTraits: encodingTraits,
-		descr:          descr,
-		enc:            encoding,
-		pool:           pool,
-		typeLength:     typeLength,
+	return EncoderImpl{
+		descr:      descr,
+		enc:        encoding,
+		pool:       pool,
+		typeLength: typeLength,
 	}
 }
 
-func (e encoderBase) Encoding() EncodingType       { return e.enc }
-func (e encoderBase) MemoryPool() memory.Allocator { return e.pool }
+func (e EncoderImpl) Encoding() EncodingType       { return e.enc }
+func (e EncoderImpl) MemoryPool() memory.Allocator { return e.pool }
 
 // ----------------------------------------------------------------------
-// PlainEncoder<T> implementations
+// PlainEncoder implementation
 
-type bufferBuilderInterface interface {
-	Len() int
-	Finish() *memory.Buffer
-	Append([]byte)
+type PlainEncoder struct {
+	EncoderImpl
+
+	dtype PhysicalType
+	sink  BufferBuilder
 }
 
-type Int64PlainEncoder struct {
-	encoderBase
-
-	// base
-	// sink *array.Int64BufferBuilder
-	sink bufferBuilderInterface
-}
-
-func NewInt64PlainEncoder(
-	encodingTraits EncodingTraits, descr *ColumnDescriptor,
-	pool memory.Allocator) (*Int64PlainEncoder, error) {
-
-	return &Int64PlainEncoder{
-		encoderBase: newEncoderBase(
-			encodingTraits, descr, EncodingType_PLAIN, pool),
-		sink: array.NewInt64BufferBuilder(pool),
+func NewPlainEncoder(
+	dtype PhysicalType,
+	descr *ColumnDescriptor, pool memory.Allocator) (*PlainEncoder, error) {
+	encodingTraits, err := dtype.EncodingTraits()
+	if err != nil {
+		return nil, err
+	}
+	return &PlainEncoder{
+		dtype:       dtype,
+		EncoderImpl: NewEncoderImpl(descr, EncodingType_PLAIN, pool),
+		sink:        encodingTraits.BufferBuilder(pool, encodingTraits.ArrowType),
 	}, nil
 }
 
-func (e *Int64PlainEncoder) EstimatedDataEncodedSize() int {
-	return e.sink.Len()
+func (p *PlainEncoder) EstimatedDataEncodedSize() int {
+	return p.sink.Len()
 }
 
-func (e *Int64PlainEncoder) FlushValues() *memory.Buffer {
-	return e.sink.Finish()
+func (p *PlainEncoder) FlushValues() *memory.Buffer {
+	return p.sink.Finish()
 }
 
-func (e *Int64PlainEncoder) Put(src interface{}, numValues int) error {
-	switch v := src.(type) {
-	case []int64:
-		e.sink.(*array.Int64BufferBuilder).AppendValues(v)
-		return nil
-	case []byte:
-		return e.PutBuffer(v)
-	default:
-		return fmt.Errorf(
-			"Put: to %s from %T not supported",
-			arrow.INT64.String(),
-			src,
+func (p *PlainEncoder) PutPhysical(buffer interface{}, numValues int) error {
+	buf, ok := buffer.([]byte)
+	if !ok {
+		fmt.Errorf(
+			"PutPhysical only []byte supported (not: %T): %w",
+			buffer,
+			ParquetException,
 		)
 	}
+	if numValues > 0 {
+		// TODO(nickpoorman): C++ version has this writing to
+		// Append as a []byte (they take the size of the values which is how I know).
+		// It's possible that buffer is automatically being turned into a []byte though.
+		p.sink.Append(buf)
+	}
+	return nil
 }
 
-func (e *Int64PlainEncoder) PutArrowArray(values array.Interface) error {
-	arrayType := arrow.Int64Type{}
-	if values.DataType().ID() != arrayType.ID() {
+func (p *PlainEncoder) DirectPutImpl(values array.Interface) error {
+	traits, err := p.dtype.EncodingTraits()
+	if err != nil {
+		return err
+	}
+	valueType := traits.ArrowType
+	if values.DataType().ID() != valueType.ID() {
+		typeName := valueType.Name()
 		return fmt.Errorf(
-			"PutArrowArray: direct put to %s from %s not supported",
-			arrayType.Name(),
-			values.DataType().Name(),
+			"direct put to %s from %s not supported: %w",
+			typeName, values.DataType().Name(),
+			ParquetException,
 		)
 	}
 
-	// TODO(nickpoorman): Not sure if we can cast here or if we need to init it from the data. Need to test this...
-	// int64Values := array.NewInt64Data(values.Data())
-	vals := values.(*array.Int64)
-	rawValues := vals.Int64Values()
-
+	valueSize := p.dtype.valueByteSize
+	rawValues, err := traits.RawValues(values)
+	if err != nil {
+		return err
+	}
 	if values.NullN() == 0 {
 		// no nulls, just dump the data
-		e.sink.(*array.Int64BufferBuilder).AppendValues(rawValues)
+		p.sink.Append(rawValues)
 	} else {
-		for i := 0; i < vals.Len(); i++ {
-			if vals.IsValid(i) {
-				e.sink.(*array.Int64BufferBuilder).AppendValue(vals.Value(i))
+		// TODO(nickpoorman): If we set up our Sink correctly, we won't
+		// have to do any of this size stuff
+		// As the method calls would delegate to the correct buffer builder.
+		p.sink.Reserve(int64(values.Len() - values.NullN()*valueSize))
+
+		for i := 0; i < values.Len(); i++ {
+			if values.IsValid(i) {
+				p.sink.UnsafeAppend(rawValues[i:], int64(valueSize))
+			}
+		}
+	}
+
+}
+
+func (p *PlainEncoder) PutArrowArray(values array.Interface) error {
+	// arrayType := arrow.Int64Type{}
+	// if values.DataType().ID() != arrayType.ID() {
+	// 	return fmt.Errorf(
+	// 		"PutArrowArray: direct put to %s from %s not supported",
+	// 		arrayType.Name(),
+	// 		values.DataType().Name(),
+	// 	)
+	// }
+
+	// // TODO(nickpoorman): Not sure if we can cast here or if we need to init it from the data. Need to test this...
+	// // int64Values := array.NewInt64Data(values.Data())
+	// vals := values.(*array.Int64)
+	// rawValues := vals.Int64Values()
+
+	// if values.NullN() == 0 {
+	// 	// no nulls, just dump the data
+	// 	e.sink.(*array.Int64BufferBuilder).AppendValues(rawValues)
+	// } else {
+	// 	for i := 0; i < vals.Len(); i++ {
+	// 		if vals.IsValid(i) {
+	// 			e.sink.(*array.Int64BufferBuilder).AppendValue(vals.Value(i))
+	// 		}
+	// 	}
+	// }
+
+	// return nil
+
+	switch p.dtype {
+	case Int32Type, Int64Type, Int96Type, FloatType, DoubleType:
+		return p.DirectPutImpl(values)
+	case Int96Type:
+		return fmt.Errorf(
+			"direct put to Int96: %w",
+			ParquetNYIException,
+		)
+	case ByteArrayType:
+		return p.putArrowArrayBinary(values)
+	case FLBAType:
+		return p.putArrowArrayFixedSizeBinary(values)
+	default:
+		return fmt.Errorf(
+			"direct put of %s: %w",
+			values.DataType().Name(),
+			ParquetNYIException,
+		)
+	}
+}
+
+func (p *PlainEncoder) putArrowArrayBinary(values array.Interface) error {
+	if err := AssertBinary(values); err != nil {
+		return err
+	}
+	data, ok := values.(*array.Binary)
+	if !ok {
+		return fmt.Errorf(
+			"values must be a *array.Binary: %w",
+			ParquetException,
+		)
+	}
+	totalBytes := data.ValueOffset(data.Len()) - data.ValueOffset(0)
+	p.sink.Reserve(int64(totalBytes + data.Len()*int(unsafe.Sizeof(uint32(0)))))
+
+	if data.NullN() == 0 {
+		// no nulls, just dump the data
+		for i := 0; i < data.Len(); i++ {
+			view := data.Value(i)
+			p.UnsafePutByteArray(view, uint32(len(view)))
+		}
+	} else {
+		for i := 0; i < data.Len(); i++ {
+			if data.IsValid(i) {
+				view := data.Value(i)
+				p.UnsafePutByteArray(view, uint32(len(view)))
 			}
 		}
 	}
@@ -268,49 +595,95 @@ func (e *Int64PlainEncoder) PutArrowArray(values array.Interface) error {
 	return nil
 }
 
-func (e *Int64PlainEncoder) PutBuffer(buffer []byte) error {
-	e.sink.Append(buffer)
+func AssertFixedSizeBinary(values array.Interface, typeLength int) error {
+	if values.DataType().ID() != arrow.FIXED_SIZE_BINARY &&
+		values.DataType().ID() != arrow.DECIMAL {
+		return fmt.Errorf(
+			"Only FixedSizeBinaryArray and subclasses supported: %w",
+			ParquetException,
+		)
+	}
+	fsbt, ok := values.DataType().(*arrow.FixedSizeBinaryType)
+	if !ok {
+		return fmt.Errorf(
+			"DataType should have been *arrow.FixedSizeBinaryType (was: %T): %w",
+			values.DataType(),
+			ParquetException,
+		)
+	}
+	if fsbt.ByteWidth != typeLength {
+		return fmt.Errorf(
+			"Size mismatch: %s should have been %d wide (was: %d): %w",
+			values.DataType().Name(),
+			typeLength,
+			fsbt.ByteWidth,
+			ParquetException,
+		)
+	}
 	return nil
 }
 
-func (e *Int64PlainEncoder) PutSpaced(
-	src interface{}, validBits []byte, validBitsOffset int) error {
-
-	switch v := src.(type) {
-	case []int64:
-		return e.putSpacedValuesInt64(v, validBits, validBitsOffset)
-	default:
-		return fmt.Errorf(
-			"PutSpaced: to %s from %T not supported",
-			arrow.INT64.String(),
-			src,
-		)
-	}
+// putArrowArrayFixedSizeBinary
+func (p *PlainEncoder) putArrowArrayFixedSizeBinary(values array.Interface) error {
+	// TODO: Implement (line 247 & 268 encoding.cc)
 }
 
-// TODO: Add the other types...
-func (e *Int64PlainEncoder) putSpacedValuesInt64(
-	src []int64, validBits []byte,
-	validBitsOffset int) error {
-	numValues := len(src)
-
-	buffer := memory.NewResizableBuffer(e.MemoryPool())
-	defer buffer.Release()
-	buffer.Resize(arrow.Int64Traits.BytesRequired(numValues))
-
-	numValidValues := 0
-	validBitsReader := bitutilext.NewBitmapReader(
-		validBits, validBitsOffset, numValues)
-	data := arrow.Int64Traits.CastFromBytes(buffer.Bytes())
-
-	for i := 0; i < numValues; i++ {
-		if validBitsReader.IsSet() {
-			data[numValidValues] = src[i]
-			numValidValues++
-		}
-		validBitsReader.Next()
+func (p *PlainEncoder) PutSpacedPhysical(
+	src interface{}, numValues int, validBits []byte,
+	validBitsOffset int64) error {
+	buffer := AllocateBuffer(p.pool, numValues*p.dtype.valueByteSize)
+	data, err := p.dtype.ReinterpretCastToPrimitiveType(buffer.Buf())
+	if err != nil {
+		return err
 	}
-	return e.PutBuffer(arrow.Int64Traits.CastToBytes(data[:numValidValues]))
+	numValidValues := arrowext.SpacedCompress(
+		src, numValues, validBits, validBitsOffset, data)
+
+	return p.PutPhysical(data, numValidValues)
+}
+
+func (p *PlainEncoder) UnsafePutByteArray(data []byte, length uint32) error {
+	debug.Assert(length == 0 || data != nil, "Value ptr cannot be nil")
+	// TODO(nickpoorman): Test this because I'm not sure it's 100% corret.
+	const uint32size = int(unsafe.Sizeof(uint32(0)))
+	var l [uint32size]byte
+	binary.LittleEndian.PutUint32(l[:], length)
+	p.sink.UnsafeAppend(l[:], int64(uint32size))
+	p.sink.UnsafeAppend(data, int64(length))
+	return nil
+}
+
+func (p *PlainEncoder) PutByteArray(val ByteArray) error {
+	// Write the result to the output stream
+	increment := int64(val.len) + int64(unsafe.Sizeof(uint32(0)))
+	if int64(p.sink.Len())+increment > int64(p.sink.Cap()) {
+		p.sink.Reserve(increment)
+	}
+	return p.UnsafePutByteArray(val.ptr, val.len)
+}
+
+func (p *PlainEncoder) PutByteArrays(src []ByteArray, numValues int) error {
+	if p.dtype != ByteArrayType {
+		return fmt.Errorf(
+			"PutByteArray only supported for ByteArrayType: %w",
+			ParquetException,
+		)
+	}
+	for i := 0; i < numValues; i++ {
+		p.PutByteArray(src[i])
+	}
+	return nil
+}
+
+func AssertBinary(values array.Interface) error {
+	if values.DataType().ID() != arrow.BINARY &&
+		values.DataType().ID() != arrow.STRING {
+		return fmt.Errorf(
+			"Only BinaryArray and subclasses supported: %w",
+			ParquetException,
+		)
+	}
+	return nil
 }
 
 // ----------------------------------------------------------------------
@@ -381,9 +754,10 @@ func (e *Int64DictEncoder) PutBuffer(buffer interface{}, numValues int) error {
 			}
 		default:
 			return fmt.Errorf(
-				"PutBuffer: direct put to %s from %T not supported",
+				"PutBuffer: direct put to %s from %T not supported: %w",
 				arrow.INT64.String(),
 				buffer,
+				ParquetException,
 			)
 		}
 	}
@@ -450,9 +824,10 @@ func (e *Int64DictEncoder) PutSpaced(
 	srcInt64, ok := src.([]int64)
 	if !ok {
 		return fmt.Errorf(
-			"PutSpaced: to %s from %T not supported",
+			"PutSpaced: to %s from %T not supported: %w",
 			arrow.INT64.String(),
 			src,
+			ParquetException,
 		)
 	}
 
@@ -671,8 +1046,9 @@ func (d *Int64PlainDecoder) Decode(
 		return d.DecodeValues(arrow.Int64Traits.CastFromBytes(v), maxValues)
 	default:
 		return 0, fmt.Errorf(
-			"Int64PlainDecoder: to %T not supported",
+			"Int64PlainDecoder: to %T not supported: %w",
 			buffer,
+			ParquetException,
 		)
 	}
 }
@@ -855,8 +1231,9 @@ func (d *Int64DictDecoder) DecodeSpaced(
 			numValues, nullCount, validBits, validBitsOffset)
 	default:
 		return 0, fmt.Errorf(
-			"{{.DType}} DecodeSpaced: to %T not supported",
+			"{{.DType}} DecodeSpaced: to %T not supported: %w",
 			src,
+			ParquetException,
 		)
 	}
 }
@@ -1075,18 +1452,28 @@ func NewDictDecoder(
 	}
 }
 
+// var (
+// 	// Encoder
+// 	_ Encoder               = (*Int64PlainEncoder)(nil)
+// 	_ PlainEncoder          = (*Int64PlainEncoder)(nil)
+// 	_ TypedEncoderInterface = (*Int64PlainEncoder)(nil)
+
+// 	// Decoder
+// 	_ Decoder = (*Int64PlainDecoder)(nil)
+// 	// _ PlainDecoder = (*Int64PlainDecoder)(nil)
+// 	_ TypedDecoderInterface = (*Int64PlainDecoder)(nil)
+
+// 	_ Decoder               = (*Int64DictDecoder)(nil)
+// 	_ TypedDecoderInterface = (*Int64DictDecoder)(nil)
+// 	_ DictDecoder           = (*Int64DictDecoder)(nil)
+// )
+
+// var (
+// 	_ Encoder      = (*encoderBase)(nil)
+// 	_ TypedEncoder = (*PlainEncoder)(nil)
+// )
+
 var (
-	// Encoder
-	_ Encoder               = (*Int64PlainEncoder)(nil)
-	_ PlainEncoder          = (*Int64PlainEncoder)(nil)
-	_ TypedEncoderInterface = (*Int64PlainEncoder)(nil)
-
-	// Decoder
-	_ Decoder = (*Int64PlainDecoder)(nil)
-	// _ PlainDecoder = (*Int64PlainDecoder)(nil)
-	_ TypedDecoderInterface = (*Int64PlainDecoder)(nil)
-
-	_ Decoder               = (*Int64DictDecoder)(nil)
-	_ TypedDecoderInterface = (*Int64DictDecoder)(nil)
-	_ DictDecoder           = (*Int64DictDecoder)(nil)
+	_ TypedDecoder = (*BooleanDecoder)(nil)
+	_ TypedEncoder = (*PlainEncoder)(nil)
 )

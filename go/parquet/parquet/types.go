@@ -1518,7 +1518,7 @@ const (
 
 // https://github.com/apache/arrow/blob/41753ace481a82dea651c54639ec4adbae169187/cpp/src/parquet/types.h#L506
 type ByteArray struct {
-	len int
+	len uint32
 	ptr []byte
 }
 
@@ -1530,7 +1530,7 @@ func NewByteArrayEmpty() ByteArray {
 	}
 }
 
-func NewByteArray(len int, ptr []byte) ByteArray {
+func NewByteArray(len uint32, ptr []byte) ByteArray {
 	return ByteArray{
 		len: len,
 		ptr: ptr,
@@ -1541,7 +1541,7 @@ func NewByteArrayImplicit(view string) ByteArray {
 	// https://github.com/apache/arrow/blob/41753ace481a82dea651c54639ec4adbae169187/cpp/src/parquet/types.h#L510
 	b := []byte(view)
 	return ByteArray{
-		len: len(b),
+		len: uint32(len(b)),
 		ptr: b,
 	}
 }
@@ -1661,6 +1661,34 @@ func (p PhysicalType) ReinterpretCastToPrimitiveType(b []byte) (interface{}, err
 	default:
 		return b, fmt.Errorf(
 			"PhysicalType ReinterpretCastToPrimitiveType unhandled Type: %d: %w",
+			p.dtype,
+			ParquetException,
+		)
+	}
+}
+
+// EncodingTraits returns the EncodingTraits for the dtype of this PhysicalType.
+func (p *PhysicalType) EncodingTraits() (EncodingTraits, error) {
+	switch p.dtype {
+	case Type_BOOLEAN:
+		return BooleanEncodingTraits, nil
+	case Type_INT32:
+		return Int32EncodingTraits, nil
+	case Type_INT64:
+		return Int64EncodingTraits, nil
+	case Type_INT96:
+		return Int96EncodingTraits, nil
+	case Type_FLOAT:
+		return FloatEncodingTraits, nil
+	case Type_DOUBLE:
+		return DoubleEncodingTraits, nil
+	case Type_BYTE_ARRAY:
+		return ByteArrayEncodingTraits, nil
+	case Type_FIXED_LEN_BYTE_ARRAY:
+		return FLBAEncodingTraits, nil
+	default:
+		return EncodingTraits{}, fmt.Errorf(
+			"PhysicalType EncodingTraits unhandled Type: %d: %w",
 			p.dtype,
 			ParquetException,
 		)

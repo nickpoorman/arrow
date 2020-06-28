@@ -1,36 +1,38 @@
 package parquet
 
 import (
+	"fmt"
+
 	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/array"
 	"github.com/apache/arrow/go/arrow/memory"
 )
 
-type TypedEncoder struct {
-	PhysicalType
-}
+// type TypedEncoder struct {
+// 	PhysicalType
+// }
 
-var BooleanEncoder = TypedEncoder{BooleanType}
-var Int32Encoder = TypedEncoder{Int32Type}
-var Int64Encoder = TypedEncoder{Int64Type}
-var Int96Encoder = TypedEncoder{Int96Type}
-var FloatEncoder = TypedEncoder{FloatType}
-var DoubleEncoder = TypedEncoder{DoubleType}
-var ByteArrayEncoder = TypedEncoder{ByteArrayType}
-var FLBAEncoder = TypedEncoder{FLBAType}
+// var BooleanEncoder = TypedEncoder{BooleanType}
+// var Int32Encoder = TypedEncoder{Int32Type}
+// var Int64Encoder = TypedEncoder{Int64Type}
+// var Int96Encoder = TypedEncoder{Int96Type}
+// var FloatEncoder = TypedEncoder{FloatType}
+// var DoubleEncoder = TypedEncoder{DoubleType}
+// var ByteArrayEncoder = TypedEncoder{ByteArrayType}
+// var FLBAEncoder = TypedEncoder{FLBAType}
 
-type TypedDecoder struct {
-	PhysicalType
-}
+// type TypedDecoder struct {
+// 	PhysicalType
+// }
 
-var BooleanDecoder = TypedDecoder{BooleanType}
-var Int32Decoder = TypedDecoder{Int32Type}
-var Int64Decoder = TypedDecoder{Int64Type}
-var Int96Decoder = TypedDecoder{Int96Type}
-var FloatDecoder = TypedDecoder{FloatType}
-var DoubleDecoder = TypedDecoder{DoubleType}
-var ByteArrayDecoder = TypedDecoder{ByteArrayType}
-var FLBADecoder = TypedDecoder{FLBAType}
+// var BooleanDecoder = TypedDecoder{BooleanType}
+// var Int32Decoder = TypedDecoder{Int32Type}
+// var Int64Decoder = TypedDecoder{Int64Type}
+// var Int96Decoder = TypedDecoder{Int96Type}
+// var FloatDecoder = TypedDecoder{FloatType}
+// var DoubleDecoder = TypedDecoder{DoubleType}
+// var ByteArrayDecoder = TypedDecoder{ByteArrayType}
+// var FLBADecoder = TypedDecoder{FLBAType}
 
 type Accumulator struct {
 	Builder array.Builder
@@ -44,6 +46,15 @@ func NewAccumulator(builder array.Builder) *Accumulator {
 	}
 }
 
+type BufferBuilder interface {
+	Len() int
+	Cap() int
+	Finish() *memory.Buffer
+	Append([]byte)
+	Reserve(int64)
+	UnsafeAppend(data []byte, length int64)
+}
+
 type EncodingTraits struct {
 	Encoder TypedEncoder
 	Decoder TypedDecoder
@@ -52,6 +63,8 @@ type EncodingTraits struct {
 	Accumulator func(mem memory.Allocator, dtype arrow.DataType) *Accumulator
 	// TODO: Implement DictionaryBuilder?
 	// DictAccumulator array.Builder
+	BufferBuilder func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder
+	RawValues     func(values array.Interface) ([]byte, error)
 }
 
 var BooleanEncodingTraits = EncodingTraits{
@@ -61,6 +74,15 @@ var BooleanEncodingTraits = EncodingTraits{
 	ArrowType: arrow.FixedWidthTypes.Boolean,
 	Accumulator: func(mem memory.Allocator, dtype arrow.DataType) *Accumulator {
 		return NewAccumulator(array.NewBooleanBuilder(mem))
+	},
+	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
+		return array.NewBooleanBufferBuilder(mem)
+	},
+	RawValues: func(values array.Interface) ([]byte, error) {
+		return nil, fmt.Errorf(
+			"RawValues for Boolean not supported: %w",
+			ParquetNYIException,
+		)
 	},
 }
 
@@ -72,6 +94,19 @@ var Int32EncodingTraits = EncodingTraits{
 	Accumulator: func(mem memory.Allocator, dtype arrow.DataType) *Accumulator {
 		return NewAccumulator(array.NewInt32Builder(mem))
 	},
+	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
+		return array.NewInt32BufferBuilder(mem)
+	},
+	RawValues: func(values array.Interface) ([]byte, error) {
+		v, ok := values.(*array.Int32)
+		if !ok {
+			return nil, fmt.Errorf(
+				"values must be an *array.Int32: %w",
+				ParquetException,
+			)
+		}
+		return arrow.Int32Traits.CastToBytes(v.Int32Values()), nil
+	},
 }
 
 var Int64EncodingTraits = EncodingTraits{
@@ -82,11 +117,31 @@ var Int64EncodingTraits = EncodingTraits{
 	Accumulator: func(mem memory.Allocator, dtype arrow.DataType) *Accumulator {
 		return NewAccumulator(array.NewInt64Builder(mem))
 	},
+	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
+		return array.NewInt64BufferBuilder(mem)
+	},
+	RawValues: func(values array.Interface) ([]byte, error) {
+		v, ok := values.(*array.Int64)
+		if !ok {
+			return nil, fmt.Errorf(
+				"values must be an *array.Int64: %w",
+				ParquetException,
+			)
+		}
+		return arrow.Int64Traits.CastToBytes(v.Int64Values()), nil
+	},
 }
 
 var Int96EncodingTraits = EncodingTraits{
 	Encoder: Int96Encoder,
 	Decoder: Int96Decoder,
+
+	RawValues: func(values array.Interface) ([]byte, error) {
+		return nil, fmt.Errorf(
+			"RawValues for Int96 not supported: %w",
+			ParquetNYIException,
+		)
+	},
 }
 
 var FloatEncodingTraits = EncodingTraits{
@@ -97,6 +152,19 @@ var FloatEncodingTraits = EncodingTraits{
 	Accumulator: func(mem memory.Allocator, dtype arrow.DataType) *Accumulator {
 		return NewAccumulator(array.NewFloat32Builder(mem))
 	},
+	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
+		return array.NewFloat32BufferBuilder(mem)
+	},
+	RawValues: func(values array.Interface) ([]byte, error) {
+		v, ok := values.(*array.Float32)
+		if !ok {
+			return nil, fmt.Errorf(
+				"values must be an *array.Float32: %w",
+				ParquetException,
+			)
+		}
+		return arrow.Float32Traits.CastToBytes(v.Float32Values()), nil
+	},
 }
 
 var DoubleEncodingTraits = EncodingTraits{
@@ -106,6 +174,19 @@ var DoubleEncodingTraits = EncodingTraits{
 	ArrowType: arrow.PrimitiveTypes.Float64,
 	Accumulator: func(mem memory.Allocator, dtype arrow.DataType) *Accumulator {
 		return NewAccumulator(array.NewFloat64Builder(mem))
+	},
+	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
+		return array.NewFloat64BufferBuilder(mem)
+	},
+	RawValues: func(values array.Interface) ([]byte, error) {
+		v, ok := values.(*array.Float64)
+		if !ok {
+			return nil, fmt.Errorf(
+				"values must be an *array.Float64: %w",
+				ParquetException,
+			)
+		}
+		return arrow.Float64Traits.CastToBytes(v.Float64Values()), nil
 	},
 }
 
@@ -119,6 +200,19 @@ var ByteArrayEncodingTraits = EncodingTraits{
 	Accumulator: func(mem memory.Allocator, dtype arrow.DataType) *Accumulator {
 		return NewAccumulator(array.NewBinaryBuilder(mem, dtype.(arrow.BinaryDataType)))
 	},
+	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
+		return array.NewBinaryBufferBuilder(mem)
+	},
+	RawValues: func(values array.Interface) ([]byte, error) {
+		v, ok := values.(*array.Binary)
+		if !ok {
+			return nil, fmt.Errorf(
+				"values must be an *array.ByteArray: %w",
+				ParquetException,
+			)
+		}
+		return v.ValueBytes(), nil
+	},
 }
 
 var FLBAEncodingTraits = EncodingTraits{
@@ -130,5 +224,22 @@ var FLBAEncodingTraits = EncodingTraits{
 	ArrowType: &arrow.FixedSizeBinaryType{},
 	Accumulator: func(mem memory.Allocator, dtype arrow.DataType) *Accumulator {
 		return NewAccumulator(array.NewFixedSizeBinaryBuilder(mem, dtype.(*arrow.FixedSizeBinaryType)))
+	},
+	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
+		return array.NewFixedSizeBinaryBufferBuilder(mem, dtype.(*arrow.FixedSizeBinaryType))
+	},
+	RawValues: func(values array.Interface) ([]byte, error) {
+		return nil, fmt.Errorf(
+			"RawValues for Boolean not supported: %w",
+			ParquetNYIException,
+		)
+		// v, ok := values.(*array.FixedSizeBinary)
+		// if !ok {
+		// 	return nil, fmt.Errorf(
+		// 		"values must be an *array.ByteArray: %w",
+		// 		ParquetException,
+		// 	)
+		// }
+		// return v.Data().Buffers()[1].Bytes(), nil
 	},
 }

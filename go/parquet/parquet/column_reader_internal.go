@@ -830,7 +830,7 @@ func (b *ByteArrayDictionaryRecordReader) ReadValuesDense(valuesToRead int64) er
 	if b.currentEncoding == EncodingType_RLE_DICTIONARY {
 		b.MaybeWriteNewDictionary()
 		decoder := b.currentDecoder //.(*BinaryDictDecoder)
-		n, err := decoder.DecodeIndicies(int(valuesToRead), b.builder)
+		n, err := decoder.DecodeIndices(int(valuesToRead), b.builder)
 		if err != nil {
 			return err
 		}
@@ -859,7 +859,7 @@ func (b *ByteArrayDictionaryRecordReader) ReadValuesSpaced(
 	if b.currentEncoding == EncodingType_RLE_DICTIONARY {
 		b.MaybeWriteNewDictionary()
 		decoder := b.currentDecoder //.(*BinaryDictDecoder)
-		n, err := decoder.DecodeIndiciesSpaced(
+		n, err := decoder.DecodeIndicesSpaced(
 			int(valuesToRead), int(nullCount),
 			b.validBits.Buf(), int(b.valuesWritten), b.accumulator)
 		if err != nil {

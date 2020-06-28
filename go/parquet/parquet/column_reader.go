@@ -1283,6 +1283,7 @@ func NewColumnReader(descr *ColumnDescriptor, pager *PageReader,
 	}
 }
 
+// TODO: Remove
 // var BoolReader = NewTypedColumnReader(BooleanType)
 // var Int32Reader = NewTypedColumnReader(Int32Type)
 // var Int64Reader = NewTypedColumnReader(Int64Type)
