@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/apache/arrow/go/arrow/array"
 	"github.com/apache/arrow/go/arrow/bitutil"
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/bytearray"
@@ -690,11 +691,10 @@ type columnReaderImplBase struct {
 	decoders map[int]TypedDecoderInterface
 }
 
-func newColumnReaderImplBase(dtype PhysicalType, descr *ColumnDescriptor,
+func newColumnReaderImplBase(descr *ColumnDescriptor,
 	pool memory.Allocator) *columnReaderImplBase {
 
 	return &columnReaderImplBase{
-		dtype:             dtype,
 		descr:             descr,
 		maxDefLevel:       descr.MaxDefinitionLevel,
 		maxRepLevel:       descr.MaxRepetitionLevel,
@@ -1030,7 +1030,7 @@ func newTypedColumnReaderImpl(dtype PhysicalType,
 	descr *ColumnDescriptor, pager *PageReader,
 	pool memory.Allocator) *typedColumnReaderImpl {
 	return &typedColumnReaderImpl{
-		columnReaderImplBase: *newColumnReaderImplBase(dtype, descr, pool),
+		columnReaderImplBase: *newColumnReaderImplBase(descr, pool),
 		dtype:                dtype,
 	}
 }
@@ -1291,6 +1291,78 @@ func NewColumnReader(descr *ColumnDescriptor, pager *PageReader,
 // var DoubleReader = NewTypedColumnReader(DoubleType)
 // var ByteArrayReader = NewTypedColumnReader(ByteArrayType)
 // var FixedLenByteArrayReader = NewTypedColumnReader(FLBAType)
+
+type RecordReader interface {
+	// Attempt to read indicated number of records from column chunk
+	// return number of records read
+	ReadRecords(numRecords int64) (int64, error)
+
+	// Pre-allocate space for data. Results in better flat read performance
+	Reserve(numValues int64)
+
+	// Clear consumed values and repetition/definition levels as the
+	// result of calling ReadRecords
+	Reset()
+
+	// Transfer filled values buffer to caller. A new one will be
+	// allocated in subsequent ReadRecords calls
+	ReleaseValues() (*memory.Buffer, error)
+
+	// Transfer filled validity bitmap buffer to caller. A new one will
+	// be allocated in subsequent ReadRecords calls
+	ReleaseIsValid() (*memory.Buffer, error)
+
+	// Return true if the record reader has more internal data yet to
+	// process
+	HasMoreData() bool
+
+	// Advance record reader to the next row group
+	SetPageReader(reader PageReader)
+
+	// Print the state to a string which is returned or an error.
+	DebugPrintState() (string, error)
+
+	// Decoded definition levels
+	DefLevels() []int16
+
+	// Decoded repetition levels
+	RepLevels() []int16
+
+	// Decoded values, including nulls, if any
+	Values() []byte
+
+	// Number of values written including nulls (if any)
+	ValuesWritten() int64
+
+	// Number of definition / repetition levels (from those that have
+	// been decoded) that have been consumed inside the reader.
+	LevelsPosition() int64
+
+	// Number of definition / repetition levels that have been written
+	// internally in the reader
+	LevelsWritten() int64
+
+	// Number of nulls in the leaf
+	NullCount() int64
+
+	// True if the leaf values are nullable
+	NullableValues() bool
+
+	// True if reading directly as Arrow dictionary-encoded
+	ReadDictionary() bool
+}
+
+type BinaryRecordReader interface {
+	RecordReader
+	GetBuilderChunks() []array.Interface
+}
+
+// Read records directly to dictionary-encoded Arrow form (int32
+// indices). Only valid for BYTE_ARRAY columns
+type DictionaryRecordReader interface {
+	RecordReader
+	GetResult() *array.Chunked
+}
 
 var _ PageReader = (*SerializedPageReader)(nil)
 var _ TypedColumnReader = (*typedColumnReaderImpl)(nil)

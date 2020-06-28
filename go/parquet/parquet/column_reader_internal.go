@@ -25,7 +25,7 @@ const kMinLevelBatchSize int64 = 1024
 // \note API EXPERIMENTAL
 // \since 1.3.0
 
-type RecordReader struct {
+type recordReaderBase struct {
 	nullableValues bool
 
 	atRecordStart bool
@@ -51,112 +51,62 @@ type RecordReader struct {
 	readDictionary bool
 }
 
-func NewRecordReader(
+func newRecordReaderBase(
 	descr ColumnDescriptor,
 	pool memory.Allocator,
 	readDictionary bool, /* default: false */
-) *RecordReader {
-	return &RecordReader{}
+) *recordReaderBase {
+	return &recordReaderBase{
+		readDictionary: readDictionary,
+	}
 }
 
-// Attempt to read indicated number of records from column chunk
-// return number of records read
-func (r *RecordReader) ReadRecords(numRecords int64) int64 {}
-
-// Pre-allocate space for data. Results in better flat read performance
-func (r *RecordReader) Reserve(numValues int64) int64 {}
-
-// Clear consumed values and repetition/definition levels as the
-// result of calling ReadRecords
-func (r *RecordReader) Reset() {}
-
-// Transfer filled values buffer to caller. A new one will be
-// allocated in subsequent ReadRecords calls
-func (r *RecordReader) ReleaseValues() *memory.Buffer {}
-
-// Transfer filled validity bitmap buffer to caller. A new one will
-// be allocated in subsequent ReadRecords calls
-func (r *RecordReader) ReleaseIsValid() *memory.Buffer {}
-
-// Return true if the record reader has more internal data yet to
-// process
-func (r *RecordReader) HasMoreData() bool {}
-
-// Advance record reader to the next row group
-// reader obtained from RowGroupReader::GetColumnPageReader
-func (r *RecordReader) SetPageReader(reader *PageReader) {}
-
-func (r *RecordReader) DebugPrintState() {}
-
 // Decoded definition levels
-func (r *RecordReader) DefLevels() []int16 {
+func (r *recordReaderBase) DefLevels() []int16 {
 	return arrow.Int16Traits.CastFromBytes(r.defLevels.Bytes())
 }
 
 // Decoded repetition levels
-func (r *RecordReader) RepLevels() []int16 {
+func (r *recordReaderBase) RepLevels() []int16 {
 	return arrow.Int16Traits.CastFromBytes(r.repLevels.Bytes())
 }
 
 // Decoded values, including nulls, if any
-func (r *RecordReader) Values() []byte {
+func (r *recordReaderBase) Values() []byte {
 	return r.values.Bytes()
 }
 
 // Number of values written including nulls (if any)
-func (r *RecordReader) ValuesWritten() int64 {
+func (r *recordReaderBase) ValuesWritten() int64 {
 	return r.valuesWritten
 }
 
 // Number of definition / repetition levels (from those that have
 // been decoded) that have been consumed inside the reader.
-func (r *RecordReader) LevelsPosition() int64 {
+func (r *recordReaderBase) LevelsPosition() int64 {
 	return r.levelsPosition
 }
 
 // Number of definition / repetition levels that have been written
 // internally in the reader
-func (r *RecordReader) LevelsWritten() int64 {
+func (r *recordReaderBase) LevelsWritten() int64 {
 	return r.levelsWritten
 }
 
 // Number of nulls in the leaf
-func (r *RecordReader) NullCount() int64 {
+func (r *recordReaderBase) NullCount() int64 {
 	return r.nullCount
 }
 
 // True if the leaf values are nullable
-func (r *RecordReader) NullableValues() bool {
+func (r *recordReaderBase) NullableValues() bool {
 	return r.nullableValues
 }
 
 // True if reading directly as Arrow dictionary-encoded
-func (r *RecordReader) ReadDictionary() bool {
+func (r *recordReaderBase) ReadDictionary() bool {
 	return r.readDictionary
 }
-
-// TODO: Remove...
-// type BinaryRecordReader struct {
-// 	RecordReader
-// }
-
-// func NewBinaryRecordReader() *BinaryRecordReader {
-// 	return &BinaryRecordReader{}
-// }
-
-// func (b *BinaryRecordReader) GetBuilderChunks() []array.Interface {}
-
-// Read records directly to dictionary-encoded Arrow form (int32
-// indices). Only valid for BYTE_ARRAY columns
-type DictionaryRecordReader struct {
-	RecordReader
-}
-
-func NewDictionaryRecordReader() *DictionaryRecordReader {
-	return &DictionaryRecordReader{}
-}
-
-func (b *DictionaryRecordReader) GetResult() []array.Chunked {}
 
 // TODO(nickpoorman): another code path split to merge when the general case is done
 func HasSpacedValues(descr *ColumnDescriptor) bool {
@@ -180,15 +130,15 @@ func HasSpacedValues(descr *ColumnDescriptor) bool {
 type TypedRecordReader struct {
 	dtype PhysicalType
 	columnReaderImplBase
-	RecordReader
+	recordReaderBase
 }
 
 func NewTypedRecordReader(dtype PhysicalType,
 	descr *ColumnDescriptor, pool memory.Allocator) *TypedRecordReader {
 
 	tr := &TypedRecordReader{
-		columnReaderImplBase: *newColumnReaderImplBase(dtype, descr, pool),
-		RecordReader:         *NewRecordReader(*descr, pool, false),
+		columnReaderImplBase: *newColumnReaderImplBase(descr, pool),
+		recordReaderBase:     *newRecordReaderBase(*descr, pool, false),
 	}
 
 	tr.nullableValues = HasSpacedValues(descr)
@@ -227,7 +177,11 @@ func (t *TypedRecordReader) ReadRecords(numRecords int64) (int64, error) {
 	var recordsRead int64
 
 	if t.levelsPosition < t.levelsWritten {
-		recordsRead += t.ReadRecordData(numRecords)
+		rr, err := t.ReadRecordData(numRecords)
+		if err != nil {
+			return recordsRead, err
+		}
+		recordsRead += rr
 	}
 
 	levelBatchSize := u.MaxInt64(kMinLevelBatchSize, numRecords)
@@ -287,11 +241,19 @@ func (t *TypedRecordReader) ReadRecords(numRecords int64) (int64, error) {
 			}
 
 			t.levelsWritten += levelsRead
-			recordsRead += t.ReadRecordData(numRecords - recordsRead)
+			rr, err := t.ReadRecordData(numRecords - recordsRead)
+			if err != nil {
+				return recordsRead, err
+			}
+			rr += recordsRead
 		} else {
 			// No repetition or definition levels
 			batchSize := u.MinInt64(numRecords-recordsRead, batchSize)
-			recordsRead += t.ReadRecordData(batchSize)
+			rr, err := t.ReadRecordData(batchSize)
+			if err != nil {
+				return recordsRead, err
+			}
+			rr += recordsRead
 		}
 	}
 
@@ -471,7 +433,7 @@ func (t *TypedRecordReader) ReserveValues(extraValues int64) error {
 	return nil
 }
 
-func (t *TypedRecordReader) Reset() error {
+func (t *TypedRecordReader) Reset() {
 	t.ResetValues()
 
 	if t.levelsWritten > 0 {
@@ -496,8 +458,6 @@ func (t *TypedRecordReader) Reset() error {
 
 	t.recordsRead = 0
 	// Call Finish on the binary builders to reset them
-
-	return nil
 }
 
 func (t *TypedRecordReader) SetPageReader(reader PageReader) {
@@ -518,8 +478,12 @@ func (t *TypedRecordReader) ReadValuesSpaced(valuesWithNulls int64, nullCount in
 	validBits := t.validBits.Buf()
 	validBitsOffset := t.valuesWritten
 
+	valuesHead, err := t.ValuesHead()
+	if err != nil {
+		return err
+	}
 	numDecoded, err := t.currentDecoder.DecodeSpaced(
-		t.ValuesHead(), int(valuesWithNulls),
+		valuesHead, int(valuesWithNulls),
 		int(nullCount), validBits, validBitsOffset,
 	)
 	if err != nil {
@@ -533,7 +497,11 @@ func (t *TypedRecordReader) ReadValuesSpaced(valuesWithNulls int64, nullCount in
 }
 
 func (t *TypedRecordReader) ReadValuesDense(valuesToRead int64) error {
-	numDecoded, err := t.currentDecoder.Decode(t.ValuesHead(), int(valuesToRead))
+	valuesHead, err := t.ValuesHead()
+	if err != nil {
+		return err
+	}
+	numDecoded, err := t.currentDecoder.Decode(valuesHead, int(valuesToRead))
 	if err != nil {
 		return err
 	}
@@ -658,7 +626,6 @@ func (t *TypedRecordReader) ValuesHead() (interface{}, error) {
 
 type FLBARecordReader struct {
 	TypedRecordReader
-	BinaryRecordReader
 
 	builder *array.FixedSizeBinaryBuilder
 }
@@ -667,8 +634,8 @@ func NewFLBARecordReader(
 	descr *ColumnDescriptor, pool memory.Allocator) *FLBARecordReader {
 
 	rr := &FLBARecordReader{
-		TypedRecordReader:  *NewTypedRecordReader(FLBAType, descr, pool),
-		BinaryRecordReader: *NewBinaryRecordReader(),
+		TypedRecordReader: *NewTypedRecordReader(FLBAType, descr, pool),
+		// BinaryRecordReader: *NewBinaryRecordReader(),
 	}
 	debug.Assert(
 		descr.PhysicalType() == Type_FIXED_LEN_BYTE_ARRAY,
@@ -731,28 +698,29 @@ func (f *FLBARecordReader) ReadValuesSpaced(valuesToRead int64, nullCount int64)
 	return nil
 }
 
-// ByteArrayChunkedReader
-type ByteArrayChunkedReader struct {
+// ByteArrayChunkedRecordReader
+type ByteArrayChunkedRecordReader struct {
 	TypedRecordReader
 	// Helper data structure for accumulating builder chunks
 	accumulator *Accumulator
 }
 
-// NewByteArrayChunkedReader creates a new ByteArrayChunkedReader struct.
-func NewByteArrayChunkedReader(dtype PhysicalType, descr *ColumnDescriptor,
-	pool memory.Allocator) *ByteArrayChunkedReader {
+// NewByteArrayChunkedRecordReader creates a new ByteArrayChunkedRecordReader struct.
+func NewByteArrayChunkedRecordReader(
+	descr *ColumnDescriptor,
+	pool memory.Allocator) *ByteArrayChunkedRecordReader {
 	debug.Assert(descr.PhysicalType() == Type_BYTE_ARRAY,
 		"Assert: descr.PhysicalType() == Type_BYTE_ARRAY")
 
-	return &ByteArrayChunkedReader{
-		TypedRecordReader: *NewTypedRecordReader(dtype, descr, pool),
+	return &ByteArrayChunkedRecordReader{
+		TypedRecordReader: *NewTypedRecordReader(ByteArrayType, descr, pool),
 		accumulator: ByteArrayEncodingTraits.Accumulator(
 			pool, arrow.BinaryTypes.Binary),
 	}
 }
 
 // GetBuilderChunks
-func (b *ByteArrayChunkedReader) GetBuilderChunks() []array.Interface {
+func (b *ByteArrayChunkedRecordReader) GetBuilderChunks() []array.Interface {
 	result := b.accumulator.Chunks
 	if len(result) == 0 || b.accumulator.Builder.Len() > 0 {
 		lastChunk := b.accumulator.Builder.NewArray()
@@ -763,7 +731,7 @@ func (b *ByteArrayChunkedReader) GetBuilderChunks() []array.Interface {
 }
 
 // ReadValuesDense
-func (b *ByteArrayChunkedReader) ReadValuesDense(
+func (b *ByteArrayChunkedRecordReader) ReadValuesDense(
 	valuesToRead int64, nullCount int64) error {
 	numDecoded, err := b.currentDecoder.DecodeArrowNonNull(
 		int(valuesToRead), b.accumulator,
@@ -779,7 +747,7 @@ func (b *ByteArrayChunkedReader) ReadValuesDense(
 }
 
 // ReadValuesSpaced
-func (b *ByteArrayChunkedReader) ReadValuesSpaced(
+func (b *ByteArrayChunkedRecordReader) ReadValuesSpaced(
 	valuesToRead int64, nullCount int64) error {
 
 	numDecoded, err := b.currentDecoder.DecodeArrow(
@@ -794,3 +762,141 @@ func (b *ByteArrayChunkedReader) ReadValuesSpaced(
 	b.ResetValues()
 	return nil
 }
+
+// ByteArrayDictionaryRecordReader
+type ByteArrayDictionaryRecordReader struct {
+	TypedRecordReader
+	// DictionaryRecordReader
+
+	accumulator  *Accumulator
+	resultChunks []array.Interface
+	dtype        arrow.BinaryDataType
+}
+
+// NewByteArrayDictionaryRecordReader creates a new ByteArrayDictionaryRecordReader struct.
+func NewByteArrayDictionaryRecordReader(
+	descr *ColumnDescriptor,
+	pool memory.Allocator) *ByteArrayDictionaryRecordReader {
+	br := &ByteArrayDictionaryRecordReader{
+		TypedRecordReader: *NewTypedRecordReader(ByteArrayType, descr, pool),
+		// DictionaryRecordReader: NewDictionaryRecordReader(),
+
+		// Should this maybe be  arrow.BinaryTypes.String since we are dealing
+		// with a Dictionary?
+		accumulator: ByteArrayEncodingTraits.Accumulator(pool, arrow.BinaryTypes.Binary),
+	}
+	br.readDictionary = true
+	return br
+}
+
+// builder
+func (b *ByteArrayDictionaryRecordReader) builder() *array.BinaryBuilder {
+	return b.accumulator.Builder.(*array.BinaryBuilder)
+}
+
+// GetResult
+func (b *ByteArrayDictionaryRecordReader) GetResult() *array.Chunked {
+	b.FlushBuilder()
+	result := b.resultChunks
+	b.resultChunks = make([]array.Interface, 0)
+	return array.NewChunked(arrow.BinaryTypes.Binary, result)
+}
+
+// FlushBuilder
+func (b *ByteArrayDictionaryRecordReader) FlushBuilder() {
+	if b.builder().Len() > 0 {
+		chunk := b.builder().NewArray()
+		b.resultChunks = append(b.resultChunks, chunk)
+	}
+}
+
+// MaybeWriteNewDictionary
+func (b *ByteArrayDictionaryRecordReader) MaybeWriteNewDictionary() {
+	if b.newDictionary {
+		panic(ParquetNYIException)
+		// If there is a new dictionary, we may need to flush the builder, then
+		// insert the new dictionary values
+		// b.FlushBuilder()
+		// b.builder.ResetFull()
+		// decoder := b.currentDecoder.(*BinaryDictDecoder)
+		// decoder.InsertDictionary(b.builder)
+		// b.newDictionary = false
+	}
+}
+
+// ReadValuesDense
+func (b *ByteArrayDictionaryRecordReader) ReadValuesDense(valuesToRead int64) error {
+	var numDecoded int64
+	if b.currentEncoding == EncodingType_RLE_DICTIONARY {
+		b.MaybeWriteNewDictionary()
+		decoder := b.currentDecoder //.(*BinaryDictDecoder)
+		n, err := decoder.DecodeIndicies(int(valuesToRead), b.builder)
+		if err != nil {
+			return err
+		}
+		numDecoded = int64(n)
+	} else {
+		n, err := b.currentDecoder.DecodeArrowNonNull(
+			int(valuesToRead), b.accumulator,
+		)
+		if err != nil {
+			return err
+		}
+		numDecoded = int64(n)
+
+		// Flush values since they have been copied into the builder
+		b.ResetValues()
+	}
+
+	debug.Assert(numDecoded == valuesToRead, "Assert: numDecoded == valuesToRead")
+	return nil
+}
+
+// ReadValuesSpaced
+func (b *ByteArrayDictionaryRecordReader) ReadValuesSpaced(
+	valuesToRead int64, nullCount int64) error {
+	var numDecoded int64
+	if b.currentEncoding == EncodingType_RLE_DICTIONARY {
+		b.MaybeWriteNewDictionary()
+		decoder := b.currentDecoder //.(*BinaryDictDecoder)
+		n, err := decoder.DecodeIndiciesSpaced(
+			int(valuesToRead), int(nullCount),
+			b.validBits.Buf(), int(b.valuesWritten), b.accumulator)
+		if err != nil {
+			return err
+		}
+		numDecoded = int64(n)
+	} else {
+		n, err := b.currentDecoder.DecodeArrow(
+			int(valuesToRead), int(nullCount),
+			b.validBits.Buf(), int(b.valuesWritten), b.accumulator,
+		)
+		if err != nil {
+			return err
+		}
+		numDecoded = int64(n)
+
+		// Flush values since they have been copied into the builder
+		b.ResetValues()
+	}
+
+	debug.Assert(numDecoded == valuesToRead-nullCount,
+		"Assert: numDecoded == valuesToRead - nullCount")
+	return nil
+}
+
+func NewByteArrayRecordReader(
+	descr *ColumnDescriptor, pool memory.Allocator, readDictionary bool) RecordReader {
+	if readDictionary {
+		return NewByteArrayDictionaryRecordReader(descr, pool)
+	} else {
+		return NewByteArrayChunkedRecordReader(descr, pool)
+	}
+}
+
+var (
+	_ RecordReader           = (*TypedRecordReader)(nil)
+	_ BinaryRecordReader     = (*FLBARecordReader)(nil)
+	_ BinaryRecordReader     = (*ByteArrayChunkedRecordReader)(nil)
+	_ DictionaryRecordReader = (*ByteArrayDictionaryRecordReader)(nil)
+)
