@@ -7,12 +7,12 @@ import (
 
 	"github.com/apache/arrow/go/arrow"
 	"github.com/apache/arrow/go/arrow/array"
+	"github.com/apache/arrow/go/arrow/bitutil"
 	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/nickpoorman/arrow-parquet-go/internal/debug"
 	"github.com/nickpoorman/arrow-parquet-go/internal/util"
 	arrowext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow"
 	utilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util"
-	bitutilext "github.com/nickpoorman/arrow-parquet-go/parquet/arrow/util/bitutil"
 )
 
 const kInMemoryDefaultCapacity int64 = 1024
@@ -432,8 +432,9 @@ func (e EncoderImpl) MemoryPool() memory.Allocator { return e.pool }
 type PlainEncoder struct {
 	EncoderImpl
 
-	dtype PhysicalType
-	sink  BufferBuilder
+	dtype          PhysicalType
+	encodingTraits EncodingTraits
+	sink           BufferBuilder
 }
 
 func NewPlainEncoder(
@@ -444,9 +445,10 @@ func NewPlainEncoder(
 		return nil, err
 	}
 	return &PlainEncoder{
-		dtype:       dtype,
-		EncoderImpl: NewEncoderImpl(descr, EncodingType_PLAIN, pool),
-		sink:        encodingTraits.BufferBuilder(pool, encodingTraits.ArrowType),
+		EncoderImpl:    NewEncoderImpl(descr, EncodingType_PLAIN, pool),
+		dtype:          dtype,
+		encodingTraits: encodingTraits,
+		sink:           encodingTraits.BufferBuilder(pool, encodingTraits.ArrowType),
 	}, nil
 }
 
@@ -458,20 +460,25 @@ func (p *PlainEncoder) FlushValues() *memory.Buffer {
 	return p.sink.Finish()
 }
 
-func (p *PlainEncoder) PutPhysical(buffer interface{}, numValues int) error {
-	buf, ok := buffer.([]byte)
-	if !ok {
-		fmt.Errorf(
-			"PutPhysical only []byte supported (not: %T): %w",
-			buffer,
-			ParquetException,
-		)
-	}
+// This could be an array of bytes or the physical values
+func (p *PlainEncoder) PutPhysical(src interface{}, numValues int) error {
+	// TODO: We may need one specifically for bytes?
+	// buf, ok := buffer.([]byte)
+	// if !ok {
+	// 	fmt.Errorf(
+	// 		"PutPhysical only []byte supported (not: %T): %w",
+	// 		buffer,
+	// 		ParquetException,
+	// 	)
+	// }
 	if numValues > 0 {
 		// TODO(nickpoorman): C++ version has this writing to
 		// Append as a []byte (they take the size of the values which is how I know).
 		// It's possible that buffer is automatically being turned into a []byte though.
-		p.sink.Append(buf)
+		// p.sink.Append(buf)
+		if err := p.encodingTraits.BufferBuilderAppendValues(p.sink, src, numValues); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -554,6 +561,8 @@ func (p *PlainEncoder) PutArrowArray(values array.Interface) error {
 		return p.putArrowArrayBinary(values)
 	case FLBAType:
 		return p.putArrowArrayFixedSizeBinary(values)
+	case BooleanType:
+		return p.putArrowArrayBoolean(values)
 	default:
 		return fmt.Errorf(
 			"direct put of %s: %w",
@@ -664,6 +673,29 @@ func (p *PlainEncoder) putArrowArrayFixedSizeBinary(values array.Interface) erro
 	return nil
 }
 
+func (p *PlainEncoder) putArrowArrayBoolean(values array.Interface) error {
+	if values.DataType().ID() != arrow.BOOL {
+		return fmt.Errorf(
+			"direct put to boolean from %s not supported: %w",
+			values.DataType().Name(),
+			ParquetException,
+		)
+	}
+
+	data, ok := values.(*array.Boolean)
+	if !ok {
+		return fmt.Errorf(
+			"values should have been *array.Boolean (was: %T): %w",
+			values,
+			ParquetException,
+		)
+	}
+
+	if data.NullN() == 0 {
+		p.sink.Reserve(bitutil.BytesForBits(int64(data.Len())))
+	}
+}
+
 func (p *PlainEncoder) PutSpacedPhysical(
 	src interface{}, numValues int, validBits []byte,
 	validBitsOffset int64) error {
@@ -734,274 +766,298 @@ func AssertBinary(values array.Interface) error {
 	return nil
 }
 
-// ----------------------------------------------------------------------
-// DictEncoder<T> implementations
-
-// Initially 1024 elements
-const kInitialHashTableSize = 1 << 10
-
-// See the dictionary encoding section of
-// https://github.com/Parquet/parquet-format.  The encoding supports
-// streaming encoding. Values are encoded as they are added while the
-// dictionary is being constructed. At any time, the buffered values
-// can be written out with the current dictionary size. More values
-// can then be added to the encoder, including new dictionary
-// entries.
-
-//+ {{.DType}}DictEncoder
-type Int64DictEncoder struct {
-	encoderBase
-
-	dataType arrow.DataType
-
-	sink *array.Int64BufferBuilder
-
-	// Indices that have not yet be written out by WriteIndices().
-	bufferedIndices []int32 // C++ implementation has this as an ArrowPoolVector
-
-	// The number of bytes needed to encode the dictionary.
-	dictEncodedSize int
-
-	memoTable utilext.MemoTable
+type PlainEncoderBoolean struct {
+	PlainEncoder
 }
 
-//+ func New{{.DType}}DictEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*{{.DType}}DictEncoder, error) {
-func NewInt64DictEncoder(encodingTraits EncodingTraits, descr *ColumnDescriptor,
-	pool memory.Allocator) (*Int64DictEncoder, error) {
+func NewPlainEncoderBoolean(
+	descr *ColumnDescriptor, pool memory.Allocator) (*PlainEncoderBoolean, error) {
+	pe, err := NewPlainEncoder(BooleanType, descr, pool)
+	if err != nil {
+		return nil, err
+	}
 
-	return &Int64DictEncoder{
-		encoderBase: newEncoderBase(
-			encodingTraits, descr, EncodingType_PLAIN_DICTIONARY, pool),
-		sink: array.NewInt64BufferBuilder(pool),
-		memoTable: utilext.NewMemoTable(
-			pool, kInitialHashTableSize, encodingTraits.ArrowType),
+	return &PlainEncoderBoolean{
+		PlainEncoder: *pe,
 	}, nil
 }
 
-// Returns a conservative estimate of the number of bytes needed to encode the buffered
-// indices. Used to size the buffer passed to WriteIndices().
-func (e *Int64DictEncoder) EstimatedDataEncodedSize() int64 {
-	// Note: because of the way RleEncoder::CheckBufferFull() is called, we have to
-	// reserve
-	// an extra "RleEncoder::MinBufferSize" bytes. These extra bytes won't be used
-	// but not reserving them would cause the encoder to fail.
-	return 1 + int64(utilext.RleEncoderMaxBufferSize(
-		e.bitWidth(), len(e.bufferedIndices),
-	)) + int64(utilext.RleEncoderMinBufferSize(e.bitWidth()))
+func (p *PlainEncoderBoolean) EstimatedDataEncodedSize() int {
+	return p.sink.Len()
 }
 
-func (e *Int64DictEncoder) DictEncodedSize() int { return e.dictEncodedSize }
-
-//+ func (e *{{.DType}}DictEncoder) PutBuffer(buffer interface{}, numValues int) error {
-func (e *Int64DictEncoder) PutBuffer(buffer interface{}, numValues int) error {
-	if numValues > 0 {
-		switch v := buffer.(type) {
-		case []int64:
-			for i := 0; i < numValues; i++ {
-				e.PutValue(v[i])
-			}
-		default:
-			return fmt.Errorf(
-				"PutBuffer: direct put to %s from %T not supported: %w",
-				arrow.INT64.String(),
-				buffer,
-				ParquetException,
-			)
-		}
-	}
-	return nil
+func (p *PlainEncoderBoolean) FlushValues() *memory.Buffer {
+	return p.sink.Finish()
 }
 
-// Encode value. Note that this does not actually write any data, just
-// buffers the value's index to be written later.
-// func (e *Int64DictEncoder) PutValue(v interface{}) error {
-// 	// switch v.(type) {
-// 	// }
+// // ----------------------------------------------------------------------
+// // DictEncoder<T> implementations
+
+// // Initially 1024 elements
+// const kInitialHashTableSize = 1 << 10
+
+// // See the dictionary encoding section of
+// // https://github.com/Parquet/parquet-format.  The encoding supports
+// // streaming encoding. Values are encoded as they are added while the
+// // dictionary is being constructed. At any time, the buffered values
+// // can be written out with the current dictionary size. More values
+// // can then be added to the encoder, including new dictionary
+// // entries.
+
+// //+ {{.DType}}DictEncoder
+// type Int64DictEncoder struct {
+// 	encoderBase
+
+// 	dataType arrow.DataType
+
+// 	sink *array.Int64BufferBuilder
+
+// 	// Indices that have not yet be written out by WriteIndices().
+// 	bufferedIndices []int32 // C++ implementation has this as an ArrowPoolVector
+
+// 	// The number of bytes needed to encode the dictionary.
+// 	dictEncodedSize int
+
+// 	memoTable utilext.MemoTable
+// }
+
+// //+ func New{{.DType}}DictEncoder(descr *ColumnDescriptor, pool memory.Allocator) (*{{.DType}}DictEncoder, error) {
+// func NewInt64DictEncoder(encodingTraits EncodingTraits, descr *ColumnDescriptor,
+// 	pool memory.Allocator) (*Int64DictEncoder, error) {
+
+// 	return &Int64DictEncoder{
+// 		encoderBase: newEncoderBase(
+// 			encodingTraits, descr, EncodingType_PLAIN_DICTIONARY, pool),
+// 		sink: array.NewInt64BufferBuilder(pool),
+// 		memoTable: utilext.NewMemoTable(
+// 			pool, kInitialHashTableSize, encodingTraits.ArrowType),
+// 	}, nil
+// }
+
+// // Returns a conservative estimate of the number of bytes needed to encode the buffered
+// // indices. Used to size the buffer passed to WriteIndices().
+// func (e *Int64DictEncoder) EstimatedDataEncodedSize() int64 {
+// 	// Note: because of the way RleEncoder::CheckBufferFull() is called, we have to
+// 	// reserve
+// 	// an extra "RleEncoder::MinBufferSize" bytes. These extra bytes won't be used
+// 	// but not reserving them would cause the encoder to fail.
+// 	return 1 + int64(utilext.RleEncoderMaxBufferSize(
+// 		e.bitWidth(), len(e.bufferedIndices),
+// 	)) + int64(utilext.RleEncoderMinBufferSize(e.bitWidth()))
+// }
+
+// func (e *Int64DictEncoder) DictEncodedSize() int { return e.dictEncodedSize }
+
+// //+ func (e *{{.DType}}DictEncoder) PutBuffer(buffer interface{}, numValues int) error {
+// func (e *Int64DictEncoder) PutBuffer(buffer interface{}, numValues int) error {
+// 	if numValues > 0 {
+// 		switch v := buffer.(type) {
+// 		case []int64:
+// 			for i := 0; i < numValues; i++ {
+// 				e.PutValue(v[i])
+// 			}
+// 		default:
+// 			return fmt.Errorf(
+// 				"PutBuffer: direct put to %s from %T not supported: %w",
+// 				arrow.INT64.String(),
+// 				buffer,
+// 				ParquetException,
+// 			)
+// 		}
+// 	}
 // 	return nil
 // }
 
-// TODO: This should really be the native type for speed....
+// // Encode value. Note that this does not actually write any data, just
+// // buffers the value's index to be written later.
+// // func (e *Int64DictEncoder) PutValue(v interface{}) error {
+// // 	// switch v.(type) {
+// // 	// }
+// // 	return nil
+// // }
+
+// // TODO: This should really be the native type for speed....
+// // func (e *Int64DictEncoder) PutValue(v int64) error {
+// //+ Specialization required here for: FLBAType, ByteArrayType, Int96Type
+// //+ func (e *{{.DType}}DictEncoder) PutValue(v interface{}) error {
 // func (e *Int64DictEncoder) PutValue(v int64) error {
-//+ Specialization required here for: FLBAType, ByteArrayType, Int96Type
-//+ func (e *{{.DType}}DictEncoder) PutValue(v interface{}) error {
-func (e *Int64DictEncoder) PutValue(v int64) error {
-	// Put() implementation for primitive types
-	onFound := func(memoIndex int32) {}
-	onNotFound := func(memoIndex int32) {
-		//+ e.dictEncodedSize += {{.Size}}
-		e.dictEncodedSize += binary.Size(v) // SIZE_OF_T // TODO: Maybe we generate these?
-	}
+// 	// Put() implementation for primitive types
+// 	onFound := func(memoIndex int32) {}
+// 	onNotFound := func(memoIndex int32) {
+// 		//+ e.dictEncodedSize += {{.Size}}
+// 		e.dictEncodedSize += binary.Size(v) // SIZE_OF_T // TODO: Maybe we generate these?
+// 	}
 
-	memoIndex, err := e.memoTable.GetOrInsert(
-		e.dataType.BuildScalar(v), onFound, onNotFound)
-	if err != nil {
-		return err
-	}
-	e.bufferedIndices = append(e.bufferedIndices, memoIndex)
-	return nil
-}
+// 	memoIndex, err := e.memoTable.GetOrInsert(
+// 		e.dataType.BuildScalar(v), onFound, onNotFound)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	e.bufferedIndices = append(e.bufferedIndices, memoIndex)
+// 	return nil
+// }
 
-//+ Specialization required here for: FLBAType, ByteArrayType, Int96Type
-//+ func (e *{{.DType}}DictEncoder) PutValues(values array.Interface) error {
-func (e *Int64DictEncoder) PutValues(values array.Interface) error {
-	// data := values.(*{{.ArrayType}})
-	data := values.(*array.Int64)
-	if data.NullN() == 0 {
-		// no nulls, just dump the data
-		for i := 0; i < data.Len(); i++ {
-			if err := e.PutValue(data.Value(i)); err != nil {
-				return err
-			}
-		}
-	} else {
-		for i := 0; i < data.Len(); i++ {
-			if data.IsValid(i) {
-				if err := e.PutValue(data.Value(i)); err != nil {
-					return err
-				}
-			}
-		}
-	}
-	return nil
-}
+// //+ Specialization required here for: FLBAType, ByteArrayType, Int96Type
+// //+ func (e *{{.DType}}DictEncoder) PutValues(values array.Interface) error {
+// func (e *Int64DictEncoder) PutValues(values array.Interface) error {
+// 	// data := values.(*{{.ArrayType}})
+// 	data := values.(*array.Int64)
+// 	if data.NullN() == 0 {
+// 		// no nulls, just dump the data
+// 		for i := 0; i < data.Len(); i++ {
+// 			if err := e.PutValue(data.Value(i)); err != nil {
+// 				return err
+// 			}
+// 		}
+// 	} else {
+// 		for i := 0; i < data.Len(); i++ {
+// 			if data.IsValid(i) {
+// 				if err := e.PutValue(data.Value(i)); err != nil {
+// 					return err
+// 				}
+// 			}
+// 		}
+// 	}
+// 	return nil
+// }
 
-func (e *Int64DictEncoder) PutSpaced(
-	src interface{}, numValues int,
-	validBits []byte, validBitsOffset int) error {
+// func (e *Int64DictEncoder) PutSpaced(
+// 	src interface{}, numValues int,
+// 	validBits []byte, validBitsOffset int) error {
 
-	srcInt64, ok := src.([]int64)
-	if !ok {
-		return fmt.Errorf(
-			"PutSpaced: to %s from %T not supported: %w",
-			arrow.INT64.String(),
-			src,
-			ParquetException,
-		)
-	}
+// 	srcInt64, ok := src.([]int64)
+// 	if !ok {
+// 		return fmt.Errorf(
+// 			"PutSpaced: to %s from %T not supported: %w",
+// 			arrow.INT64.String(),
+// 			src,
+// 			ParquetException,
+// 		)
+// 	}
 
-	validBitsReader := bitutilext.NewBitmapReader(
-		validBits, validBitsOffset, numValues)
-	for i := 0; i < numValues; i++ {
-		if validBitsReader.IsSet() {
-			if err := e.PutValue(srcInt64[i]); err != nil {
-				return err
-			}
-		}
-		validBitsReader.Next()
-	}
+// 	validBitsReader := bitutilext.NewBitmapReader(
+// 		validBits, validBitsOffset, numValues)
+// 	for i := 0; i < numValues; i++ {
+// 		if validBitsReader.IsSet() {
+// 			if err := e.PutValue(srcInt64[i]); err != nil {
+// 				return err
+// 			}
+// 		}
+// 		validBitsReader.Next()
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
-func (e *Int64DictEncoder) WriteIndices(buffer []byte, bufferLen int) int {
-	// Write bit width in first byte
-	buffer[0] = byte(e.bitWidth())
-	buffer = buffer[1:]
-	bufferLen--
+// func (e *Int64DictEncoder) WriteIndices(buffer []byte, bufferLen int) int {
+// 	// Write bit width in first byte
+// 	buffer[0] = byte(e.bitWidth())
+// 	buffer = buffer[1:]
+// 	bufferLen--
 
-	encoder := utilext.NewRleEncoder(buffer, bufferLen, e.bitWidth())
+// 	encoder := utilext.NewRleEncoder(buffer, bufferLen, e.bitWidth())
 
-	for index := range e.bufferedIndices {
-		if !encoder.Put(uint64(index)) {
-			return -1
-		}
-	}
-	encoder.Flush()
+// 	for index := range e.bufferedIndices {
+// 		if !encoder.Put(uint64(index)) {
+// 			return -1
+// 		}
+// 	}
+// 	encoder.Flush()
 
-	e.clearIndicies()
-	return 1 + encoder.Len()
-}
+// 	e.clearIndicies()
+// 	return 1 + encoder.Len()
+// }
 
-// The minimum bit width required to encode the currently buffered indices.
-func (e *Int64DictEncoder) bitWidth() int {
-	if e.numEntries() == 0 {
-		return 0
-	}
-	if e.numEntries() == 1 {
-		return 1
-	}
-	return bitutilext.Log2(uint64(e.numEntries()))
-}
+// // The minimum bit width required to encode the currently buffered indices.
+// func (e *Int64DictEncoder) bitWidth() int {
+// 	if e.numEntries() == 0 {
+// 		return 0
+// 	}
+// 	if e.numEntries() == 1 {
+// 		return 1
+// 	}
+// 	return bitutilext.Log2(uint64(e.numEntries()))
+// }
 
-// The number of entries in the dictionary.
-func (e *Int64DictEncoder) numEntries() int {
-	return int(e.memoTable.Size())
-}
+// // The number of entries in the dictionary.
+// func (e *Int64DictEncoder) numEntries() int {
+// 	return int(e.memoTable.Size())
+// }
 
-// Clears all the indices (but leaves the dictionary).
-func (e *Int64DictEncoder) clearIndicies() {
-	e.bufferedIndices = make([]int32, 0, cap(e.bufferedIndices))
-}
+// // Clears all the indices (but leaves the dictionary).
+// func (e *Int64DictEncoder) clearIndicies() {
+// 	e.bufferedIndices = make([]int32, 0, cap(e.bufferedIndices))
+// }
 
-//+ func {{.DType}}AssertCanPutDictionary(encoder *{{.DType}}DictEncoder, dict array.Interface) error {
-func Int64AssertCanPutDictionary(
-	encoder *Int64DictEncoder, dict array.Interface) error {
+// //+ func {{.DType}}AssertCanPutDictionary(encoder *{{.DType}}DictEncoder, dict array.Interface) error {
+// func Int64AssertCanPutDictionary(
+// 	encoder *Int64DictEncoder, dict array.Interface) error {
 
-	if dict.NullN() > 0 {
-		fmt.Errorf(
-			"Inserted dictionary cannot cannot contain nulls: %w",
-			ParquetException,
-		)
-	}
+// 	if dict.NullN() > 0 {
+// 		fmt.Errorf(
+// 			"Inserted dictionary cannot cannot contain nulls: %w",
+// 			ParquetException,
+// 		)
+// 	}
 
-	if encoder.numEntries() > 0 {
-		fmt.Errorf(
-			"Can only call PutDictionary on an empty DictEncoder: %w",
-			ParquetException,
-		)
-	}
+// 	if encoder.numEntries() > 0 {
+// 		fmt.Errorf(
+// 			"Can only call PutDictionary on an empty DictEncoder: %w",
+// 			ParquetException,
+// 		)
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
-//+ func {{.DType}}PutDictionary(values array.Interface) error {
-func (e *Int64DictEncoder) PutDictionary(values array.Interface) error {
-	//+ {{.DType}}AssertCanPutDictionary
-	if err := Int64AssertCanPutDictionary(e, values); err != nil {
-		return err
-	}
+// //+ func {{.DType}}PutDictionary(values array.Interface) error {
+// func (e *Int64DictEncoder) PutDictionary(values array.Interface) error {
+// 	//+ {{.DType}}AssertCanPutDictionary
+// 	if err := Int64AssertCanPutDictionary(e, values); err != nil {
+// 		return err
+// 	}
 
-	// data := values.(*{{.ArrayType}})
-	data := values.(*array.Int64)
+// 	// data := values.(*{{.ArrayType}})
+// 	data := values.(*array.Int64)
 
-	//+ e.dictEncodedSize += int({{.Size}} * data.Len())
-	e.dictEncodedSize += int(binary.Size(int64(0)) * data.Len())
-	for i := 0; i < data.Len(); i++ {
-		_, err := e.memoTable.GetOrInsert(
-			e.dataType.BuildScalar(data.Value(i)),
-			utilext.OnFoundNoOp,
-			utilext.OnNotFoundNoOp,
-		)
-		if err != nil {
-			return err
-		}
-	}
+// 	//+ e.dictEncodedSize += int({{.Size}} * data.Len())
+// 	e.dictEncodedSize += int(binary.Size(int64(0)) * data.Len())
+// 	for i := 0; i < data.Len(); i++ {
+// 		_, err := e.memoTable.GetOrInsert(
+// 			e.dataType.BuildScalar(data.Value(i)),
+// 			utilext.OnFoundNoOp,
+// 			utilext.OnNotFoundNoOp,
+// 		)
+// 		if err != nil {
+// 			return err
+// 		}
+// 	}
 
-	return nil
-}
+// 	return nil
+// }
 
-func (e *Int64DictEncoder) FlushValues() *memory.Buffer {
-	buffer := AllocateBuffer(e.pool, int(e.EstimatedDataEncodedSize()))
-	resultSize := e.WriteIndices(
-		buffer.Buf(), int(e.EstimatedDataEncodedSize()))
-	buffer.ResizeNoShrink(resultSize)
-	return buffer
-}
+// func (e *Int64DictEncoder) FlushValues() *memory.Buffer {
+// 	buffer := AllocateBuffer(e.pool, int(e.EstimatedDataEncodedSize()))
+// 	resultSize := e.WriteIndices(
+// 		buffer.Buf(), int(e.EstimatedDataEncodedSize()))
+// 	buffer.ResizeNoShrink(resultSize)
+// 	return buffer
+// }
 
-// Writes out the encoded dictionary to buffer. buffer must be preallocated to
-// DictEncodedSize() bytes.
-func (e *Int64DictEncoder) WriteDict(buffer []byte) {
-	// For primitive types, only a memcpy
-	debug.Assert(
-		e.dictEncodedSize == binary.Size(int64(0))*int(e.memoTable.Size()),
-		fmt.Sprintf(
-			"Assert: e.dictEncodedSize == "+
-				"binary.Size(int64(0))*int(e.memoTable.Size())"+
-				" | %d == %d",
-			e.dictEncodedSize, binary.Size(int64(0))*int(e.memoTable.Size()),
-		))
-	e.memoTable.CopyValues(0 /* startPos */, -1, buffer)
-}
+// // Writes out the encoded dictionary to buffer. buffer must be preallocated to
+// // DictEncodedSize() bytes.
+// func (e *Int64DictEncoder) WriteDict(buffer []byte) {
+// 	// For primitive types, only a memcpy
+// 	debug.Assert(
+// 		e.dictEncodedSize == binary.Size(int64(0))*int(e.memoTable.Size()),
+// 		fmt.Sprintf(
+// 			"Assert: e.dictEncodedSize == "+
+// 				"binary.Size(int64(0))*int(e.memoTable.Size())"+
+// 				" | %d == %d",
+// 			e.dictEncodedSize, binary.Size(int64(0))*int(e.memoTable.Size()),
+// 		))
+// 	e.memoTable.CopyValues(0 /* startPos */, -1, buffer)
+// }
 
 // ----------------------------------------------------------------------
 // Base decoder implementation
@@ -1367,68 +1423,68 @@ func (d *Int64DictDecoder) DecodeIndicesSpaced(
 // ----------------------------------------------------------------------
 // Factory functions
 
-func NewTypedEncoder(
-	encoding EncodingType, useDictionary bool, descr *ColumnDescriptor,
-	pool memory.Allocator) (TypedEncoderInterface, error) {
+// func NewTypedEncoder(
+// 	encoding EncodingType, useDictionary bool, descr *ColumnDescriptor,
+// 	pool memory.Allocator) (TypedEncoderInterface, error) {
 
-	if pool == nil {
-		pool = memory.DefaultAllocator
-	}
+// 	if pool == nil {
+// 		pool = memory.DefaultAllocator
+// 	}
 
-	encoder, err := NewEncoder(encoding, useDictionary, descr, pool)
-	if err != nil {
-		return nil, err
-	}
-	return encoder.(TypedEncoderInterface), nil
-}
+// 	encoder, err := NewEncoder(encoding, useDictionary, descr, pool)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return encoder.(TypedEncoderInterface), nil
+// }
 
 // Encode goes from Arrow into Parquet
-func NewEncoder(encoding EncodingType, useDictionary bool,
-	descr *ColumnDescriptor, pool memory.Allocator) (Encoder, error) {
+// func NewEncoder(encoding EncodingType, useDictionary bool,
+// 	descr *ColumnDescriptor, pool memory.Allocator) (Encoder, error) {
 
-	if pool == nil {
-		pool = memory.DefaultAllocator
-	}
+// 	if pool == nil {
+// 		pool = memory.DefaultAllocator
+// 	}
 
-	if useDictionary {
-		switch descr.PhysicalType() {
-		case Type_INT64:
-			return NewInt64DictEncoder(Int64EncodingTraits, descr, pool)
-		default:
-			return nil, fmt.Errorf(
-				"dict encoder for %s not implemented: %w",
-				TypeToString(descr.PhysicalType()),
-				ParquetNYIException,
-			)
-		}
+// 	if useDictionary {
+// 		switch descr.PhysicalType() {
+// 		case Type_INT64:
+// 			return NewInt64DictEncoder(Int64EncodingTraits, descr, pool)
+// 		default:
+// 			return nil, fmt.Errorf(
+// 				"dict encoder for %s not implemented: %w",
+// 				TypeToString(descr.PhysicalType()),
+// 				ParquetNYIException,
+// 			)
+// 		}
 
-	} else if encoding == EncodingType_PLAIN {
-		return NewPlainEncoder(descr, pool)
+// 	} else if encoding == EncodingType_PLAIN {
+// 		return NewPlainEncoder(descr, pool)
 
-	} else {
-		return nil, fmt.Errorf(
-			"Selected encoding is not supported: %w",
-			ParquetNYIException,
-		)
-	}
-}
+// 	} else {
+// 		return nil, fmt.Errorf(
+// 			"Selected encoding is not supported: %w",
+// 			ParquetNYIException,
+// 		)
+// 	}
+// }
 
-func NewPlainEncoder(descr *ColumnDescriptor,
-	pool memory.Allocator) (Encoder, error) {
+// func NewPlainEncoder(descr *ColumnDescriptor,
+// 	pool memory.Allocator) (Encoder, error) {
 
-	switch descr.PhysicalType() {
-	// case Type_INT32:
-	// return NewInt32PlainEncoder(descr, pool)
-	case Type_INT64:
-		return NewInt64PlainEncoder(Int64EncodingTraits, descr, pool)
-	default:
-		return nil, fmt.Errorf(
-			"plain encoder for %s not implemented: %w",
-			TypeToString(descr.PhysicalType()),
-			ParquetNYIException,
-		)
-	}
-}
+// 	switch descr.PhysicalType() {
+// 	// case Type_INT32:
+// 	// return NewInt32PlainEncoder(descr, pool)
+// 	case Type_INT64:
+// 		return NewInt64PlainEncoder(Int64EncodingTraits, descr, pool)
+// 	default:
+// 		return nil, fmt.Errorf(
+// 			"plain encoder for %s not implemented: %w",
+// 			TypeToString(descr.PhysicalType()),
+// 			ParquetNYIException,
+// 		)
+// 	}
+// }
 
 func NewTypedDecoder(encoding EncodingType,
 	descr *ColumnDescriptor) (TypedDecoderInterface, error) {

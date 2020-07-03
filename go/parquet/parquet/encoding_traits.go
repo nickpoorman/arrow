@@ -63,8 +63,10 @@ type EncodingTraits struct {
 	Accumulator func(mem memory.Allocator, dtype arrow.DataType) *Accumulator
 	// TODO: Implement DictionaryBuilder?
 	// DictAccumulator array.Builder
-	BufferBuilder func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder
-	RawValues     func(values array.Interface) ([]byte, error)
+	BufferBuilder             func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder
+	BufferBuilderAppendValues func(bufferBuilder BufferBuilder, values interface{}, numValues int) error
+
+	RawValues func(values array.Interface) ([]byte, error)
 }
 
 var BooleanEncodingTraits = EncodingTraits{
@@ -77,6 +79,26 @@ var BooleanEncodingTraits = EncodingTraits{
 	},
 	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
 		return array.NewBooleanBufferBuilder(mem)
+	},
+	BufferBuilderAppendValues: func(bufferBuilder BufferBuilder, values interface{}, numValues int) error {
+		bb, ok := bufferBuilder.(*array.BooleanBufferBuilder)
+		if !ok {
+			return fmt.Errorf(
+				"bufferBuilder must be a *array.BooleanBufferBuilder not (%T): %w",
+				bufferBuilder,
+				ParquetException,
+			)
+		}
+		v, ok := values.([]bool)
+		if !ok {
+			return fmt.Errorf(
+				"values must be an []bool not (%T): %w",
+				values,
+				ParquetException,
+			)
+		}
+		bb.AppendValues(v[:numValues])
+		return nil
 	},
 	RawValues: func(values array.Interface) ([]byte, error) {
 		return nil, fmt.Errorf(
@@ -96,6 +118,26 @@ var Int32EncodingTraits = EncodingTraits{
 	},
 	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
 		return array.NewInt32BufferBuilder(mem)
+	},
+	BufferBuilderAppendValues: func(bufferBuilder BufferBuilder, values interface{}, numValues int) error {
+		bb, ok := bufferBuilder.(*array.Int32BufferBuilder)
+		if !ok {
+			return fmt.Errorf(
+				"bufferBuilder must be a *array.BooleanBufferBuilder not (%T): %w",
+				bufferBuilder,
+				ParquetException,
+			)
+		}
+		v, ok := values.([]int32)
+		if !ok {
+			return fmt.Errorf(
+				"values must be an []bool not (%T): %w",
+				values,
+				ParquetException,
+			)
+		}
+		bb.AppendValues(v[:numValues])
+		return nil
 	},
 	RawValues: func(values array.Interface) ([]byte, error) {
 		v, ok := values.(*array.Int32)
@@ -119,6 +161,26 @@ var Int64EncodingTraits = EncodingTraits{
 	},
 	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
 		return array.NewInt64BufferBuilder(mem)
+	},
+	BufferBuilderAppendValues: func(bufferBuilder BufferBuilder, values interface{}, numValues int) error {
+		bb, ok := bufferBuilder.(*array.Int64BufferBuilder)
+		if !ok {
+			return fmt.Errorf(
+				"bufferBuilder must be a *array.BooleanBufferBuilder not (%T): %w",
+				bufferBuilder,
+				ParquetException,
+			)
+		}
+		v, ok := values.([]int64)
+		if !ok {
+			return fmt.Errorf(
+				"values must be an []bool not (%T): %w",
+				values,
+				ParquetException,
+			)
+		}
+		bb.AppendValues(v[:numValues])
+		return nil
 	},
 	RawValues: func(values array.Interface) ([]byte, error) {
 		v, ok := values.(*array.Int64)
@@ -155,6 +217,26 @@ var FloatEncodingTraits = EncodingTraits{
 	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
 		return array.NewFloat32BufferBuilder(mem)
 	},
+	BufferBuilderAppendValues: func(bufferBuilder BufferBuilder, values interface{}, numValues int) error {
+		bb, ok := bufferBuilder.(*array.Float32BufferBuilder)
+		if !ok {
+			return fmt.Errorf(
+				"bufferBuilder must be a *array.BooleanBufferBuilder not (%T): %w",
+				bufferBuilder,
+				ParquetException,
+			)
+		}
+		v, ok := values.([]float32)
+		if !ok {
+			return fmt.Errorf(
+				"values must be an []bool not (%T): %w",
+				values,
+				ParquetException,
+			)
+		}
+		bb.AppendValues(v[:numValues])
+		return nil
+	},
 	RawValues: func(values array.Interface) ([]byte, error) {
 		v, ok := values.(*array.Float32)
 		if !ok {
@@ -177,6 +259,26 @@ var DoubleEncodingTraits = EncodingTraits{
 	},
 	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
 		return array.NewFloat64BufferBuilder(mem)
+	},
+	BufferBuilderAppendValues: func(bufferBuilder BufferBuilder, values interface{}, numValues int) error {
+		bb, ok := bufferBuilder.(*array.Float64BufferBuilder)
+		if !ok {
+			return fmt.Errorf(
+				"bufferBuilder must be a *array.BooleanBufferBuilder not (%T): %w",
+				bufferBuilder,
+				ParquetException,
+			)
+		}
+		v, ok := values.([]float64)
+		if !ok {
+			return fmt.Errorf(
+				"values must be an []bool not (%T): %w",
+				values,
+				ParquetException,
+			)
+		}
+		bb.AppendValues(v[:numValues])
+		return nil
 	},
 	RawValues: func(values array.Interface) ([]byte, error) {
 		v, ok := values.(*array.Float64)
@@ -203,6 +305,26 @@ var ByteArrayEncodingTraits = EncodingTraits{
 	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
 		return array.NewBinaryBufferBuilder(mem)
 	},
+	BufferBuilderAppendValues: func(bufferBuilder BufferBuilder, values interface{}, numValues int) error {
+		bb, ok := bufferBuilder.(*array.BinaryBufferBuilder)
+		if !ok {
+			return fmt.Errorf(
+				"bufferBuilder must be a *array.BooleanBufferBuilder not (%T): %w",
+				bufferBuilder,
+				ParquetException,
+			)
+		}
+		v, ok := values.([]byte)
+		if !ok {
+			return fmt.Errorf(
+				"values must be an []bool not (%T): %w",
+				values,
+				ParquetException,
+			)
+		}
+		bb.AppendValues(v[:numValues])
+		return nil
+	},
 	RawValues: func(values array.Interface) ([]byte, error) {
 		v, ok := values.(*array.Binary)
 		if !ok {
@@ -227,6 +349,26 @@ var FLBAEncodingTraits = EncodingTraits{
 	},
 	BufferBuilder: func(mem memory.Allocator, dtype arrow.DataType) BufferBuilder {
 		return array.NewFixedSizeBinaryBufferBuilder(mem, dtype.(*arrow.FixedSizeBinaryType))
+	},
+	BufferBuilderAppendValues: func(bufferBuilder BufferBuilder, values interface{}, numValues int) error {
+		bb, ok := bufferBuilder.(*array.FixedSizeBinaryBufferBuilder)
+		if !ok {
+			return fmt.Errorf(
+				"bufferBuilder must be a *array.BooleanBufferBuilder not (%T): %w",
+				bufferBuilder,
+				ParquetException,
+			)
+		}
+		v, ok := values.([]byte)
+		if !ok {
+			return fmt.Errorf(
+				"values must be an []bool not (%T): %w",
+				values,
+				ParquetException,
+			)
+		}
+		bb.AppendValues(v[:numValues])
+		return nil
 	},
 	RawValues: func(values array.Interface) ([]byte, error) {
 		return nil, fmt.Errorf(
