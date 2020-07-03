@@ -625,7 +625,43 @@ func AssertFixedSizeBinary(values array.Interface, typeLength int) error {
 
 // putArrowArrayFixedSizeBinary
 func (p *PlainEncoder) putArrowArrayFixedSizeBinary(values array.Interface) error {
-	// TODO: Implement (line 247 & 268 encoding.cc)
+	if err := AssertFixedSizeBinary(values, p.descr.typeLength()); err != nil {
+		return err
+	}
+	data, ok := values.(*array.FixedSizeBinary)
+	if !ok {
+		return fmt.Errorf(
+			"values should have been *array.FixedSizeBinary (was: %T): %w",
+			values,
+			ParquetException,
+		)
+	}
+
+	traits, err := p.dtype.EncodingTraits()
+	if err != nil {
+		return err
+	}
+
+	byteWidth := values.DataType().(arrow.FixedWidthDataType).BitWidth() / 8
+
+	if data.NullN() == 0 {
+		// no nulls, just dump the data
+		bytes, err := traits.RawValues(values)
+		if err != nil {
+			return err
+		}
+		p.sink.Append(bytes[:data.Len()*byteWidth])
+	} else {
+		totalBytes := int64(data.Len()*byteWidth) - int64(data.NullN()*byteWidth)
+		p.sink.Reserve(totalBytes)
+		byteWidth64 := int64(byteWidth)
+		for i := 0; i < data.Len(); i++ {
+			if data.IsValid(i) {
+				p.sink.UnsafeAppend(data.Value(i), byteWidth64)
+			}
+		}
+	}
+	return nil
 }
 
 func (p *PlainEncoder) PutSpacedPhysical(
@@ -671,6 +707,18 @@ func (p *PlainEncoder) PutByteArrays(src []ByteArray, numValues int) error {
 	}
 	for i := 0; i < numValues; i++ {
 		p.PutByteArray(src[i])
+	}
+	return nil
+}
+
+func (p *PlainEncoder) PutFixedLengthByteArrays(src []FixedLenByteArray, numValues int) error {
+	if p.descr.typeLength() == 0 {
+		return nil
+	}
+	for i := 0; i < numValues; i++ {
+		// Write the result to the output stream
+		debug.Assert(src[i].ptr != nil, "Value ptr cannot be NULL")
+		p.sink.Append(src[i].ptr[:p.descr.typeLength()])
 	}
 	return nil
 }
