@@ -19,7 +19,7 @@
 //!
 //! The most important things you might be looking for are:
 //!  * [`Schema`](crate::datatypes::Schema) to describe a schema.
-//!  * [`Field`](crate::datatypes::Field) to describe one field withing a schema.
+//!  * [`Field`](crate::datatypes::Field) to describe one field within a schema.
 //!  * [`DataType`](crate::datatypes::DataType) to describe the type of a field.
 
 use std::collections::HashMap;
@@ -57,6 +57,8 @@ use crate::error::{ArrowError, Result};
 /// [the physical memory layout of Apache Arrow](https://arrow.apache.org/docs/format/Columnar.html#physical-memory-layout).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum DataType {
+    /// Null type
+    Null,
     /// A boolean datatype representing the values `true` and `false`.
     Boolean,
     /// A signed 8-bit integer.
@@ -122,6 +124,8 @@ pub enum DataType {
     FixedSizeList(Box<DataType>, i32),
     /// A nested datatype that contains a number of sub-fields.
     Struct(Vec<Field>),
+    /// A nested datatype that can represent slots of differing types.
+    Union(Vec<Field>),
     /// A dictionary array where each element is a single value indexed by an integer key.
     /// This is mostly used to represent strings or a limited set of primitive types as integers.
     Dictionary(Box<DataType>, Box<DataType>),
@@ -497,7 +501,8 @@ where
     Self::Simd: Add<Output = Self::Simd>
         + Sub<Output = Self::Simd>
         + Mul<Output = Self::Simd>
-        + Div<Output = Self::Simd>,
+        + Div<Output = Self::Simd>
+        + Copy,
 {
     /// Defines the SIMD type that should be used for this numeric type
     type Simd;
@@ -519,6 +524,11 @@ where
 
     /// Gets the value of a single lane in a SIMD mask
     fn mask_get(mask: &Self::SimdMask, idx: usize) -> bool;
+
+    /// Gets the bitmask for a SimdMask as a byte slice and passes it to the closure used as the action parameter
+    fn bitmask<T>(mask: &Self::SimdMask, action: T)
+    where
+        T: FnMut(&[u8]);
 
     /// Sets the value of a single lane of a SIMD mask
     fn mask_set(mask: Self::SimdMask, idx: usize, value: bool) -> Self::SimdMask;
@@ -590,6 +600,13 @@ macro_rules! make_numeric_type {
 
             fn mask_get(mask: &Self::SimdMask, idx: usize) -> bool {
                 unsafe { mask.extract_unchecked(idx) }
+            }
+
+            fn bitmask<T>(mask: &Self::SimdMask, mut action: T)
+            where
+                T: FnMut(&[u8]),
+            {
+                action(mask.bitmask().to_byte_slice());
             }
 
             fn mask_set(mask: Self::SimdMask, idx: usize, value: bool) -> Self::SimdMask {
@@ -749,6 +766,7 @@ impl DataType {
     fn from(json: &Value) -> Result<DataType> {
         match *json {
             Value::Object(ref map) => match map.get("name") {
+                Some(s) if s == "null" => Ok(DataType::Null),
                 Some(s) if s == "bool" => Ok(DataType::Boolean),
                 Some(s) if s == "binary" => Ok(DataType::Binary),
                 Some(s) if s == "utf8" => Ok(DataType::Utf8),
@@ -848,7 +866,7 @@ impl DataType {
                             Some(8) => Ok(DataType::Int8),
                             Some(16) => Ok(DataType::Int16),
                             Some(32) => Ok(DataType::Int32),
-                            Some(64) => Ok(DataType::Int32),
+                            Some(64) => Ok(DataType::Int64),
                             _ => Err(ArrowError::ParseError(
                                 "int bitWidth missing or invalid".to_string(),
                             )),
@@ -911,6 +929,7 @@ impl DataType {
     /// Generate a JSON representation of the data type
     pub fn to_json(&self) -> Value {
         match self {
+            DataType::Null => json!({"name": "null"}),
             DataType::Boolean => json!({"name": "bool"}),
             DataType::Int8 => json!({"name": "int", "bitWidth": 8, "isSigned": true}),
             DataType::Int16 => json!({"name": "int", "bitWidth": 16, "isSigned": true}),
@@ -929,6 +948,7 @@ impl DataType {
                 json!({"name": "fixedsizebinary", "byteWidth": byte_width})
             }
             DataType::Struct(_) => json!({"name": "struct"}),
+            DataType::Union(_) => json!({"name": "union"}),
             DataType::List(_) => json!({ "name": "list"}),
             DataType::FixedSizeList(_, length) => {
                 json!({"name":"fixedsizelist", "listSize": length})
@@ -1202,6 +1222,116 @@ impl Field {
     pub fn to_string(&self) -> String {
         format!("{}: {:?}", self.name, self.data_type)
     }
+
+    /// Merge field into self if it is compatible. Struct will be merged recursively.
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// use arrow::datatypes::*;
+    ///
+    /// let mut field = Field::new("c1", DataType::Int64, false);
+    /// assert!(field.try_merge(&Field::new("c1", DataType::Int64, true)).is_ok());
+    /// assert!(field.is_nullable());
+    /// ```
+    pub fn try_merge(&mut self, from: &Field) -> Result<()> {
+        if from.dict_id != self.dict_id {
+            return Err(ArrowError::SchemaError(
+                "Fail to merge schema Field due to conflicting dict_id".to_string(),
+            ));
+        }
+        if from.dict_is_ordered != self.dict_is_ordered {
+            return Err(ArrowError::SchemaError(
+                "Fail to merge schema Field due to conflicting dict_is_ordered"
+                    .to_string(),
+            ));
+        }
+        match &mut self.data_type {
+            DataType::Struct(nested_fields) => match &from.data_type {
+                DataType::Struct(from_nested_fields) => {
+                    for from_field in from_nested_fields {
+                        let mut is_new_field = true;
+                        for self_field in nested_fields.into_iter() {
+                            if self_field.name != from_field.name {
+                                continue;
+                            }
+                            is_new_field = false;
+                            self_field.try_merge(&from_field)?;
+                        }
+                        if is_new_field {
+                            nested_fields.push(from_field.clone());
+                        }
+                    }
+                }
+                _ => {
+                    return Err(ArrowError::SchemaError(
+                        "Fail to merge schema Field due to conflicting datatype"
+                            .to_string(),
+                    ));
+                }
+            },
+            DataType::Union(nested_fields) => match &from.data_type {
+                DataType::Union(from_nested_fields) => {
+                    for from_field in from_nested_fields {
+                        let mut is_new_field = true;
+                        for self_field in nested_fields.into_iter() {
+                            if from_field == self_field {
+                                is_new_field = false;
+                                break;
+                            }
+                        }
+                        if is_new_field {
+                            nested_fields.push(from_field.clone());
+                        }
+                    }
+                }
+                _ => {
+                    return Err(ArrowError::SchemaError(
+                        "Fail to merge schema Field due to conflicting datatype"
+                            .to_string(),
+                    ));
+                }
+            },
+            DataType::Null
+            | DataType::Boolean
+            | DataType::Int8
+            | DataType::Int16
+            | DataType::Int32
+            | DataType::Int64
+            | DataType::UInt8
+            | DataType::UInt16
+            | DataType::UInt32
+            | DataType::UInt64
+            | DataType::Float16
+            | DataType::Float32
+            | DataType::Float64
+            | DataType::Timestamp(_, _)
+            | DataType::Date32(_)
+            | DataType::Date64(_)
+            | DataType::Time32(_)
+            | DataType::Time64(_)
+            | DataType::Duration(_)
+            | DataType::Binary
+            | DataType::Interval(_)
+            | DataType::List(_)
+            | DataType::Dictionary(_, _)
+            | DataType::FixedSizeList(_, _)
+            | DataType::FixedSizeBinary(_)
+            | DataType::Utf8 => {
+                if self.data_type != from.data_type {
+                    return Err(ArrowError::SchemaError(
+                        "Fail to merge schema Field due to conflicting datatype"
+                            .to_string(),
+                    ));
+                }
+            }
+        }
+        if from.nullable {
+            self.nullable = from.nullable;
+        }
+
+        Ok(())
+    }
 }
 
 impl fmt::Display for Field {
@@ -1246,6 +1376,7 @@ impl Schema {
     pub fn new(fields: Vec<Field>) -> Self {
         Self::new_with_metadata(fields, HashMap::new())
     }
+
     /// Creates a new `Schema` from a sequence of `Field` values
     /// and adds additional metadata in form of key value pairs.
     ///
@@ -1268,6 +1399,74 @@ impl Schema {
         metadata: HashMap<String, String>,
     ) -> Self {
         Self { fields, metadata }
+    }
+
+    /// Merge schema into self if it is compatible. Struct fields will be merged recursively.
+    ///
+    /// Example:
+    ///
+    /// ```
+    /// use arrow::datatypes::*;
+    ///
+    /// let merged = Schema::try_merge(&vec![
+    ///     Schema::new(vec![
+    ///         Field::new("c1", DataType::Int64, false),
+    ///         Field::new("c2", DataType::Utf8, false),
+    ///     ]),
+    ///     Schema::new(vec![
+    ///         Field::new("c1", DataType::Int64, true),
+    ///         Field::new("c2", DataType::Utf8, false),
+    ///         Field::new("c3", DataType::Utf8, false),
+    ///     ]),
+    /// ]).unwrap();
+    ///
+    /// assert_eq!(
+    ///     merged,
+    ///     Schema::new(vec![
+    ///         Field::new("c1", DataType::Int64, true),
+    ///         Field::new("c2", DataType::Utf8, false),
+    ///         Field::new("c3", DataType::Utf8, false),
+    ///     ]),
+    /// );
+    /// ```
+    pub fn try_merge(schemas: &Vec<Self>) -> Result<Self> {
+        let mut merged = Self::empty();
+
+        for schema in schemas {
+            for (key, value) in schema.metadata.iter() {
+                // merge metadata
+                match merged.metadata.get(key) {
+                    Some(old_val) => {
+                        if old_val != value {
+                            return Err(ArrowError::SchemaError(
+                                "Fail to merge schema due to conflicting metadata"
+                                    .to_string(),
+                            ));
+                        }
+                    }
+                    None => {
+                        merged.metadata.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+            // merge fileds
+            for field in &schema.fields {
+                let mut new_field = true;
+                for merged_field in &mut merged.fields {
+                    if field.name != merged_field.name {
+                        continue;
+                    }
+                    new_field = false;
+                    merged_field.try_merge(field)?
+                }
+                // found a new field, add to field list
+                if new_field {
+                    merged.fields.push(field.clone());
+                }
+            }
+        }
+
+        Ok(merged)
     }
 
     /// Returns an immutable reference of the vector of `Field` instances
@@ -2166,5 +2365,127 @@ mod tests {
                 false,
             ),
         ])
+    }
+
+    #[test]
+    fn test_schema_merge() -> Result<()> {
+        let merged = Schema::try_merge(&vec![
+            Schema::new(vec![
+                Field::new("first_name", DataType::Utf8, false),
+                Field::new("last_name", DataType::Utf8, false),
+                Field::new(
+                    "address",
+                    DataType::Struct(vec![Field::new("zip", DataType::UInt16, false)]),
+                    false,
+                ),
+            ]),
+            Schema::new_with_metadata(
+                vec![
+                    // nullable merge
+                    Field::new("last_name", DataType::Utf8, true),
+                    Field::new(
+                        "address",
+                        DataType::Struct(vec![
+                            // add new nested field
+                            Field::new("street", DataType::Utf8, false),
+                            // nullable merge on nested field
+                            Field::new("zip", DataType::UInt16, true),
+                        ]),
+                        false,
+                    ),
+                    // new field
+                    Field::new("number", DataType::Utf8, true),
+                ],
+                [("foo".to_string(), "bar".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect::<HashMap<String, String>>(),
+            ),
+        ])?;
+
+        assert_eq!(
+            merged,
+            Schema::new_with_metadata(
+                vec![
+                    Field::new("first_name", DataType::Utf8, false),
+                    Field::new("last_name", DataType::Utf8, true),
+                    Field::new(
+                        "address",
+                        DataType::Struct(vec![
+                            Field::new("zip", DataType::UInt16, true),
+                            Field::new("street", DataType::Utf8, false),
+                        ]),
+                        false,
+                    ),
+                    Field::new("number", DataType::Utf8, true),
+                ],
+                [("foo".to_string(), "bar".to_string())]
+                    .iter()
+                    .cloned()
+                    .collect::<HashMap<String, String>>()
+            )
+        );
+
+        // support merge union fields
+        assert_eq!(
+            Schema::try_merge(&vec![
+                Schema::new(vec![Field::new(
+                    "c1",
+                    DataType::Union(vec![
+                        Field::new("c11", DataType::Utf8, true),
+                        Field::new("c12", DataType::Utf8, true),
+                    ]),
+                    false
+                ),]),
+                Schema::new(vec![Field::new(
+                    "c1",
+                    DataType::Union(vec![
+                        Field::new("c12", DataType::Utf8, true),
+                        Field::new("c13", DataType::Time64(TimeUnit::Second), true),
+                    ]),
+                    false
+                ),])
+            ])?,
+            Schema::new(vec![Field::new(
+                "c1",
+                DataType::Union(vec![
+                    Field::new("c11", DataType::Utf8, true),
+                    Field::new("c12", DataType::Utf8, true),
+                    Field::new("c13", DataType::Time64(TimeUnit::Second), true),
+                ]),
+                false
+            ),]),
+        );
+
+        // incompatible field should throw error
+        assert!(Schema::try_merge(&vec![
+            Schema::new(vec![
+                Field::new("first_name", DataType::Utf8, false),
+                Field::new("last_name", DataType::Utf8, false),
+            ]),
+            Schema::new(vec![Field::new("last_name", DataType::Int64, false),]),
+        ])
+        .is_err());
+
+        // incompatible metadata should throw error
+        assert!(Schema::try_merge(&vec![
+            Schema::new_with_metadata(
+                vec![Field::new("first_name", DataType::Utf8, false)],
+                [("foo".to_string(), "bar".to_string()),]
+                    .iter()
+                    .cloned()
+                    .collect::<HashMap<String, String>>()
+            ),
+            Schema::new_with_metadata(
+                vec![Field::new("last_name", DataType::Utf8, false)],
+                [("foo".to_string(), "baz".to_string()),]
+                    .iter()
+                    .cloned()
+                    .collect::<HashMap<String, String>>()
+            ),
+        ])
+        .is_err());
+
+        Ok(())
     }
 }

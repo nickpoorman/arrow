@@ -18,6 +18,10 @@
 #include "./arrow_types.h"
 
 #if defined(ARROW_R_WITH_ARROW)
+#include <arrow/ipc/reader.h>
+#include <arrow/ipc/writer.h>
+
+RCPP_EXPOSED_ENUM_NODECL(arrow::ipc::MessageType)
 
 // [[arrow::export]]
 int64_t ipc___Message__body_length(const std::unique_ptr<arrow::ipc::Message>& message) {
@@ -42,7 +46,7 @@ int64_t ipc___Message__Verify(const std::unique_ptr<arrow::ipc::Message>& messag
 }
 
 // [[arrow::export]]
-arrow::ipc::Message::Type ipc___Message__type(
+arrow::ipc::MessageType ipc___Message__type(
     const std::unique_ptr<arrow::ipc::Message>& message) {
   return message->type();
 }
@@ -81,19 +85,19 @@ std::shared_ptr<arrow::Schema> ipc___ReadSchema_Message(
 //--------- MessageReader
 
 // [[arrow::export]]
-std::unique_ptr<arrow::ipc::MessageReader> ipc___MessageReader__Open(
+std::shared_ptr<arrow::ipc::MessageReader> ipc___MessageReader__Open(
     const std::shared_ptr<arrow::io::InputStream>& stream) {
   return arrow::ipc::MessageReader::Open(stream);
 }
 
 // [[arrow::export]]
-std::unique_ptr<arrow::ipc::Message> ipc___MessageReader__ReadNextMessage(
+std::shared_ptr<arrow::ipc::Message> ipc___MessageReader__ReadNextMessage(
     const std::unique_ptr<arrow::ipc::MessageReader>& reader) {
   return ValueOrStop(reader->ReadNextMessage());
 }
 
 // [[arrow::export]]
-std::unique_ptr<arrow::ipc::Message> ipc___ReadMessage(
+std::shared_ptr<arrow::ipc::Message> ipc___ReadMessage(
     const std::shared_ptr<arrow::io::InputStream>& stream) {
   return ValueOrStop(arrow::ipc::ReadMessage(stream.get()));
 }

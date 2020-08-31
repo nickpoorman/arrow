@@ -17,6 +17,7 @@
 package memory
 
 import (
+	"bytes"
 	"sync/atomic"
 
 	"github.com/apache/arrow/go/arrow/internal/debug"
@@ -122,4 +123,28 @@ func (b *Buffer) resize(newSize int, shrink bool) {
 		}
 	}
 	b.length = newSize
+}
+
+func (b *Buffer) Equals(right *Buffer) bool {
+	bBuf := b.Buf()
+	rightBuff := right.Buf()
+	return b == right || (b.Len() == right.Len() &&
+		(&bBuf == &rightBuff ||
+			bytes.Equal(b.Bytes(), right.Bytes())))
+}
+
+func (b *Buffer) EqualsLen(right *Buffer, nbytes int) bool {
+	leftB := b.Buf()
+	rightB := right.Buf()
+	return b == right || (b.Len() >= nbytes && right.Len() >= nbytes &&
+		(&leftB == &rightB ||
+			bytes.Equal(b.Bytes()[:nbytes], right.Bytes()[:nbytes])))
+}
+
+// Zero bytes in padding, i.e. bytes between length and capacity.
+func (b *Buffer) ZeroPadding() {
+	debug.Assert(b.mutable, "buffer not mutable")
+	if b.Cap() != 0 {
+		Set(b.buf[b.length:], 0x00)
+	}
 }

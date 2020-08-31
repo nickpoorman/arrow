@@ -15,13 +15,16 @@
  * limitations under the License.
  */
 
-import io.netty.buffer.ArrowBuf;
+import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.ReferenceManager;
+import org.apache.arrow.memory.util.CommonUtil;
 import org.apache.arrow.memory.util.hash.ArrowBufHasher;
 import org.apache.arrow.util.Preconditions;
 import org.apache.arrow.vector.FieldVector;
 import org.apache.arrow.vector.ValueVector;
+import org.apache.arrow.vector.complex.AbstractStructVector;
+import org.apache.arrow.vector.complex.NonNullableStructVector;
 import org.apache.arrow.vector.complex.StructVector;
 import org.apache.arrow.vector.compare.VectorVisitor;
 import org.apache.arrow.vector.types.UnionMode;
@@ -29,7 +32,6 @@ import org.apache.arrow.vector.compare.RangeEqualsVisitor;
 import org.apache.arrow.vector.types.pojo.ArrowType;
 import org.apache.arrow.vector.types.pojo.FieldType;
 import org.apache.arrow.vector.util.CallBack;
-import org.apache.arrow.vector.util.ValueVectorUtility;
 
 <@pp.dropOutputFile />
 <@pp.changeOutputFile name="/org/apache/arrow/vector/complex/UnionVector.java" />
@@ -40,16 +42,16 @@ import org.apache.arrow.vector.util.ValueVectorUtility;
 package org.apache.arrow.vector.complex;
 
 <#include "/@includes/vv_imports.ftl" />
-import io.netty.buffer.ArrowBuf;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
+import org.apache.arrow.memory.ArrowBuf;
+import org.apache.arrow.memory.util.CommonUtil;
 import org.apache.arrow.vector.compare.VectorVisitor;
 import org.apache.arrow.vector.complex.impl.ComplexCopier;
 import org.apache.arrow.vector.util.CallBack;
 import org.apache.arrow.vector.util.ValueVectorUtility;
 import org.apache.arrow.vector.ipc.message.ArrowFieldNode;
-import org.apache.arrow.memory.BaseAllocator;
 import org.apache.arrow.memory.util.ArrowBufPointer;
 import org.apache.arrow.memory.util.hash.ArrowBufHasher;
 import org.apache.arrow.vector.BaseValueVector;
@@ -118,8 +120,13 @@ public class UnionVector implements FieldVector {
     this.name = name;
     this.allocator = allocator;
     this.fieldType = fieldType;
-    this.internalStruct = new NonNullableStructVector("internal", allocator, INTERNAL_STRUCT_TYPE,
-        callBack);
+    this.internalStruct = new NonNullableStructVector(
+        "internal",
+        allocator,
+        INTERNAL_STRUCT_TYPE,
+        callBack,
+        AbstractStructVector.ConflictPolicy.CONFLICT_REPLACE,
+        false);
     this.typeBuffer = allocator.getEmpty();
     this.callBack = callBack;
     this.typeBufferAllocationSizeInBytes = BaseValueVector.INITIAL_VALUE_ALLOCATION * TYPE_WIDTH;
@@ -326,14 +333,15 @@ public class UnionVector implements FieldVector {
 
   private void reallocTypeBuffer() {
     final long currentBufferCapacity = typeBuffer.capacity();
-    long baseSize  = typeBufferAllocationSizeInBytes;
-
-    if (baseSize < currentBufferCapacity) {
-      baseSize = currentBufferCapacity;
+    long newAllocationSize = currentBufferCapacity * 2;
+    if (newAllocationSize == 0) {
+      if (typeBufferAllocationSizeInBytes > 0) {
+        newAllocationSize = typeBufferAllocationSizeInBytes;
+      } else {
+        newAllocationSize = BaseValueVector.INITIAL_VALUE_ALLOCATION * TYPE_WIDTH * 2;
+      }
     }
-
-    long newAllocationSize = baseSize * 2L;
-    newAllocationSize = BaseAllocator.nextPowerOfTwo(newAllocationSize);
+    newAllocationSize = CommonUtil.nextPowerOfTwo(newAllocationSize);
     assert newAllocationSize >= 1;
 
     if (newAllocationSize > BaseValueVector.MAX_ALLOCATION_SIZE) {

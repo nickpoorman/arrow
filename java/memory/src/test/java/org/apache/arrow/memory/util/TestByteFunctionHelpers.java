@@ -19,13 +19,12 @@ package org.apache.arrow.memory.util;
 
 import static org.junit.Assert.assertEquals;
 
+import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-
-import io.netty.buffer.ArrowBuf;
 
 public class TestByteFunctionHelpers {
 
@@ -132,5 +131,37 @@ public class TestByteFunctionHelpers {
       left.close();
       right.close();
     }
+  }
+
+  @Test
+  public void testCompareWithByteArray() {
+    ArrowBuf buffer1 = allocator.buffer(SIZE);
+    byte[] buffer2 = new byte[SIZE];
+
+    for (int i = 0; i < SIZE; i++) {
+      buffer1.setByte(i, i);
+      buffer2[i] = (byte) i;
+    }
+
+    //test three cases, length>8, length>3, length<3
+
+    assertEquals(0, ByteFunctionHelpers.compare(buffer1, 0, SIZE - 1,
+        buffer2, 0, SIZE - 1));
+    assertEquals(0, ByteFunctionHelpers.compare(buffer1, 0, 6,
+        buffer2, 0, 6));
+    assertEquals(0, ByteFunctionHelpers.compare(buffer1, 0, 2,
+        buffer2, 0, 2));
+
+    //change value at index 1
+    buffer1.setByte(1, 0);
+
+    assertEquals(-1, ByteFunctionHelpers.compare(buffer1, 0, SIZE - 1,
+        buffer2, 0, SIZE - 1));
+    assertEquals(-1, ByteFunctionHelpers.compare(buffer1, 0, 6,
+        buffer2, 0, 6));
+    assertEquals(-1, ByteFunctionHelpers.compare(buffer1, 0, 2,
+        buffer2, 0, 2));
+
+    buffer1.close();
   }
 }

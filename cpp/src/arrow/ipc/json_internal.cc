@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <cstdlib>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -41,8 +42,8 @@
 #include "arrow/util/formatting.h"
 #include "arrow/util/key_value_metadata.h"
 #include "arrow/util/logging.h"
-#include "arrow/util/parsing.h"
 #include "arrow/util/string.h"
+#include "arrow/util/value_parsing.h"
 #include "arrow/visitor_inline.h"
 
 namespace arrow {
@@ -58,6 +59,7 @@ constexpr char kYearMonth[] = "YEAR_MONTH";
 class MemoryPool;
 
 using internal::checked_cast;
+using internal::ParseValue;
 
 namespace ipc {
 namespace internal {
@@ -113,25 +115,36 @@ class SchemaWriter {
     return Status::OK();
   }
 
-  void WriteKeyValueMetadata(const std::shared_ptr<const KeyValueMetadata>& metadata) {
-    if (metadata == nullptr || metadata->size() == 0) {
+  void WriteKeyValueMetadata(
+      const std::shared_ptr<const KeyValueMetadata>& metadata,
+      const std::vector<std::pair<std::string, std::string>>& additional_metadata = {}) {
+    if ((metadata == nullptr || metadata->size() == 0) && additional_metadata.empty()) {
       return;
     }
     writer_->Key("metadata");
 
     writer_->StartArray();
-    for (int64_t i = 0; i < metadata->size(); ++i) {
-      writer_->StartObject();
-
-      writer_->Key("key");
-      writer_->String(metadata->key(i).c_str());
-
-      writer_->Key("value");
-      writer_->String(metadata->value(i).c_str());
-
-      writer_->EndObject();
+    if (metadata != nullptr) {
+      for (int64_t i = 0; i < metadata->size(); ++i) {
+        WriteKeyValue(metadata->key(i), metadata->value(i));
+      }
+    }
+    for (const auto& kv : additional_metadata) {
+      WriteKeyValue(kv.first, kv.second);
     }
     writer_->EndArray();
+  }
+
+  void WriteKeyValue(const std::string& key, const std::string& value) {
+    writer_->StartObject();
+
+    writer_->Key("key");
+    writer_->String(key.c_str());
+
+    writer_->Key("value");
+    writer_->String(value.c_str());
+
+    writer_->EndObject();
   }
 
   Status WriteDictionaryMetadata(int64_t id, const DictionaryType& type) {
@@ -163,25 +176,34 @@ class SchemaWriter {
     writer_->Key("nullable");
     writer_->Bool(field->nullable());
 
-    const DataType& type = *field->type();
+    const DataType* type = field->type().get();
+    std::vector<std::pair<std::string, std::string>> additional_metadata;
+    if (type->id() == Type::EXTENSION) {
+      const auto& ext_type = checked_cast<const ExtensionType&>(*type);
+      type = ext_type.storage_type().get();
+      additional_metadata.emplace_back(kExtensionTypeKeyName, ext_type.extension_name());
+      additional_metadata.emplace_back(kExtensionMetadataKeyName, ext_type.Serialize());
+    }
 
     // Visit the type
     writer_->Key("type");
     writer_->StartObject();
-    RETURN_NOT_OK(VisitType(type));
+    RETURN_NOT_OK(VisitType(*type));
     writer_->EndObject();
 
-    if (type.id() == Type::DICTIONARY) {
-      const auto& dict_type = checked_cast<const DictionaryType&>(type);
+    if (type->id() == Type::DICTIONARY) {
+      const auto& dict_type = checked_cast<const DictionaryType&>(*type);
+      // Ensure we visit child fields first so that, in the case of nested
+      // dictionaries, inner dictionaries get a smaller id than outer dictionaries.
+      RETURN_NOT_OK(WriteChildren(dict_type.value_type()->fields()));
       int64_t dictionary_id = -1;
       RETURN_NOT_OK(dictionary_memo_->GetOrAssignId(field, &dictionary_id));
       RETURN_NOT_OK(WriteDictionaryMetadata(dictionary_id, dict_type));
-      RETURN_NOT_OK(WriteChildren(dict_type.value_type()->children()));
     } else {
-      RETURN_NOT_OK(WriteChildren(type.children()));
+      RETURN_NOT_OK(WriteChildren(type->fields()));
     }
 
-    WriteKeyValueMetadata(field->metadata());
+    WriteKeyValueMetadata(field->metadata(), additional_metadata);
     writer_->EndObject();
 
     return Status::OK();
@@ -419,29 +441,40 @@ class ArrayWriter {
     return Status::OK();
   }
 
-  template <typename T, bool IsSigned = std::is_signed<typename T::value_type>::value>
-  void WriteIntegerDataValues(const T& arr) {
-    static const char null_string[] = "0";
-    const auto data = arr.raw_values();
+  template <typename ArrayType, typename TypeClass = typename ArrayType::TypeClass,
+            typename CType = typename TypeClass::c_type>
+  enable_if_t<is_physical_integer_type<TypeClass>::value &&
+              sizeof(CType) != sizeof(int64_t)>
+  WriteDataValues(const ArrayType& arr) {
+    static const std::string null_string = "0";
     for (int64_t i = 0; i < arr.length(); ++i) {
       if (arr.IsValid(i)) {
-        IsSigned ? writer_->Int64(data[i]) : writer_->Uint64(data[i]);
+        writer_->Int64(arr.Value(i));
       } else {
-        writer_->RawNumber(null_string, sizeof(null_string));
+        writer_->RawNumber(null_string.data(),
+                           static_cast<rj::SizeType>(null_string.size()));
       }
     }
   }
 
-  template <typename ArrayType>
-  enable_if_physical_signed_integer<typename ArrayType::TypeClass> WriteDataValues(
-      const ArrayType& arr) {
-    WriteIntegerDataValues<ArrayType>(arr);
-  }
+  template <typename ArrayType, typename TypeClass = typename ArrayType::TypeClass,
+            typename CType = typename TypeClass::c_type>
+  enable_if_t<is_physical_integer_type<TypeClass>::value &&
+              sizeof(CType) == sizeof(int64_t)>
+  WriteDataValues(const ArrayType& arr) {
+    ::arrow::internal::StringFormatter<typename CTypeTraits<CType>::ArrowType> fmt;
 
-  template <typename ArrayType>
-  enable_if_physical_unsigned_integer<typename ArrayType::TypeClass> WriteDataValues(
-      const ArrayType& arr) {
-    WriteIntegerDataValues<ArrayType>(arr);
+    static const std::string null_string = "0";
+    for (int64_t i = 0; i < arr.length(); ++i) {
+      if (arr.IsValid(i)) {
+        fmt(arr.Value(i), [&](util::string_view repr) {
+          writer_->String(repr.data(), static_cast<rj::SizeType>(repr.size()));
+        });
+      } else {
+        writer_->String(null_string.data(),
+                        static_cast<rj::SizeType>(null_string.size()));
+      }
+    }
   }
 
   template <typename ArrayType>
@@ -609,13 +642,13 @@ class ArrayWriter {
       const ArrayType& array) {
     WriteValidityField(array);
     WriteIntegerField("OFFSET", array.raw_value_offsets(), array.length() + 1);
-    return WriteChildren(array.type()->children(), {array.values()});
+    return WriteChildren(array.type()->fields(), {array.values()});
   }
 
   Status Visit(const FixedSizeListArray& array) {
     WriteValidityField(array);
     const auto& type = checked_cast<const FixedSizeListType&>(*array.type());
-    return WriteChildren(type.children(), {array.values()});
+    return WriteChildren(type.fields(), {array.values()});
   }
 
   Status Visit(const StructArray& array) {
@@ -626,7 +659,7 @@ class ArrayWriter {
     for (int i = 0; i < array.num_fields(); ++i) {
       children.emplace_back(array.field(i));
     }
-    return WriteChildren(type.children(), children);
+    return WriteChildren(type.fields(), children);
   }
 
   Status Visit(const UnionArray& array) {
@@ -635,19 +668,18 @@ class ArrayWriter {
 
     WriteIntegerField("TYPE_ID", array.raw_type_codes(), array.length());
     if (type.mode() == UnionMode::DENSE) {
-      WriteIntegerField("OFFSET", array.raw_value_offsets(), array.length());
+      auto offsets = checked_cast<const DenseUnionArray&>(array).raw_value_offsets();
+      WriteIntegerField("OFFSET", offsets, array.length());
     }
     std::vector<std::shared_ptr<Array>> children;
     children.reserve(array.num_fields());
     for (int i = 0; i < array.num_fields(); ++i) {
-      children.emplace_back(array.child(i));
+      children.emplace_back(array.field(i));
     }
-    return WriteChildren(type.children(), children);
+    return WriteChildren(type.fields(), children);
   }
 
-  Status Visit(const ExtensionArray& array) {
-    return Status::NotImplemented("extension array");
-  }
+  Status Visit(const ExtensionArray& array) { return VisitArrayValues(*array.storage()); }
 
  private:
   const std::string& name_;
@@ -733,19 +765,11 @@ static Status GetMap(const RjObject& json_type,
     return Status::Invalid("Map must have exactly one child");
   }
 
-  if (children[0]->type()->id() != Type::STRUCT ||
-      children[0]->type()->num_children() != 2) {
-    return Status::Invalid("Map's key-item pairs must be structs");
-  }
-
   const auto& it_keys_sorted = json_type.FindMember("keysSorted");
   RETURN_NOT_BOOL("keysSorted", it_keys_sorted, json_type);
-
-  auto pair_children = children[0]->type()->children();
-
   bool keys_sorted = it_keys_sorted->value.GetBool();
-  *type = map(pair_children[0]->type(), pair_children[1]->type(), keys_sorted);
-  return Status::OK();
+
+  return MapType::Make(children[0], keys_sorted).Value(type);
 }
 
 static Status GetFixedSizeBinary(const RjObject& json_type,
@@ -922,7 +946,11 @@ static Status GetUnion(const RjObject& json_type,
     type_codes.push_back(static_cast<int8_t>(val.GetInt()));
   }
 
-  *type = union_(children, type_codes, mode);
+  if (mode == UnionMode::SPARSE) {
+    *type = sparse_union(std::move(children), std::move(type_codes));
+  } else {
+    *type = dense_union(std::move(children), std::move(type_codes));
+  }
 
   return Status::OK();
 }
@@ -1083,22 +1111,47 @@ static Status GetField(const rj::Value& obj, DictionaryMemo* dictionary_memo,
   std::shared_ptr<KeyValueMetadata> metadata;
   RETURN_NOT_OK(GetKeyValueMetadata(json_field, &metadata));
 
+  // Is it a dictionary type?
+  int64_t dictionary_id = -1;
   const auto& it_dictionary = json_field.FindMember("dictionary");
   if (dictionary_memo != nullptr && it_dictionary != json_field.MemberEnd()) {
     // Parse dictionary id in JSON and add dictionary field to the
     // memo, and parse the dictionaries later
     RETURN_NOT_OBJECT("dictionary", it_dictionary, json_field);
-    int64_t dictionary_id = -1;
     bool is_ordered;
     std::shared_ptr<DataType> index_type;
     RETURN_NOT_OK(ParseDictionary(it_dictionary->value.GetObject(), &dictionary_id,
                                   &is_ordered, &index_type));
 
     type = ::arrow::dictionary(index_type, type, is_ordered);
-    *field = ::arrow::field(name, type, nullable, metadata);
+  }
+
+  // Is it an extension type?
+  int ext_name_index = metadata->FindKey(kExtensionTypeKeyName);
+  if (ext_name_index != -1) {
+    const auto& ext_name = metadata->value(ext_name_index);
+    ARROW_ASSIGN_OR_RAISE(auto ext_data, metadata->Get(kExtensionMetadataKeyName));
+
+    auto ext_type = GetExtensionType(ext_name);
+    if (ext_type == nullptr) {
+      // Some integration tests check that unregistered extensions pass through
+      auto maybe_value = metadata->Get("ARROW:integration:allow_unregistered_extension");
+      if (!maybe_value.ok() || *maybe_value != "true") {
+        return Status::KeyError("Extension type '", ext_name, "' not found");
+      }
+    } else {
+      ARROW_ASSIGN_OR_RAISE(type, ext_type->Deserialize(type, ext_data));
+
+      // Remove extension type metadata, for exact roundtripping
+      RETURN_NOT_OK(metadata->Delete(kExtensionTypeKeyName));
+      RETURN_NOT_OK(metadata->Delete(kExtensionMetadataKeyName));
+    }
+  }
+
+  // Create field
+  *field = ::arrow::field(name, type, nullable, metadata);
+  if (dictionary_id != -1) {
     RETURN_NOT_OK(dictionary_memo->AddField(dictionary_id, *field));
-  } else {
-    *field = ::arrow::field(name, type, nullable, metadata);
   }
 
   return Status::OK();
@@ -1110,18 +1163,24 @@ enable_if_boolean<T, bool> UnboxValue(const rj::Value& val) {
   return val.GetBool();
 }
 
-template <typename T>
-enable_if_physical_signed_integer<T, typename T::c_type> UnboxValue(
-    const rj::Value& val) {
+template <typename T, typename CType = typename T::c_type>
+enable_if_t<is_physical_integer_type<T>::value && sizeof(CType) != sizeof(int64_t), CType>
+UnboxValue(const rj::Value& val) {
   DCHECK(val.IsInt64());
-  return static_cast<typename T::c_type>(val.GetInt64());
+  return static_cast<CType>(val.GetInt64());
 }
 
-template <typename T>
-enable_if_physical_unsigned_integer<T, typename T::c_type> UnboxValue(
-    const rj::Value& val) {
-  DCHECK(val.IsUint());
-  return static_cast<typename T::c_type>(val.GetUint64());
+template <typename T, typename CType = typename T::c_type>
+enable_if_t<is_physical_integer_type<T>::value && sizeof(CType) == sizeof(int64_t), CType>
+UnboxValue(const rj::Value& val) {
+  DCHECK(val.IsString());
+
+  CType out;
+  bool success = ::arrow::internal::ParseValue<typename CTypeTraits<CType>::ArrowType>(
+      val.GetString(), val.GetStringLength(), &out);
+
+  DCHECK(success);
+  return out;
 }
 
 template <typename T>
@@ -1139,7 +1198,8 @@ class ArrayReader {
         pool_(pool),
         field_(field),
         type_(field->type()),
-        dictionary_memo_(dictionary_memo) {}
+        dictionary_memo_(dictionary_memo),
+        dictionary_id_(-1) {}
 
   template <typename T>
   enable_if_has_c_type<T, Status> Visit(const T& type) {
@@ -1309,6 +1369,7 @@ class ArrayReader {
   template <typename T>
   Status GetIntArray(const RjArray& json_array, const int32_t length,
                      std::shared_ptr<Buffer>* out) {
+    using ArrowType = typename CTypeTraits<T>::ArrowType;
     ARROW_ASSIGN_OR_RAISE(auto buffer, AllocateBuffer(length * sizeof(T), pool_));
 
     T* values = reinterpret_cast<T*>(buffer->mutable_data());
@@ -1325,11 +1386,11 @@ class ArrayReader {
     } else {
       // Read 64-bit integers as strings, as JSON numbers cannot represent
       // them exactly.
-      ::arrow::internal::StringConverter<typename CTypeTraits<T>::ArrowType> converter;
+
       for (int i = 0; i < length; ++i) {
         const rj::Value& val = json_array[i];
         DCHECK(val.IsString());
-        if (!converter(val.GetString(), val.GetStringLength(), &values[i])) {
+        if (!ParseValue<ArrowType>(val.GetString(), val.GetStringLength(), &values[i])) {
           return Status::Invalid("Failed to parse integer: '",
                                  std::string(val.GetString(), val.GetStringLength()),
                                  "'");
@@ -1371,10 +1432,7 @@ class ArrayReader {
   }
 
   Status Visit(const MapType& type) {
-    auto list_type = std::make_shared<ListType>(field(
-        "entries",
-        struct_({field("key", type.key_type(), false), field("value", type.item_type())}),
-        false));
+    auto list_type = std::make_shared<ListType>(type.value_field());
     std::shared_ptr<Array> list_array;
     RETURN_NOT_OK(CreateList<ListType>(list_type, &list_array));
     auto map_data = list_array->data();
@@ -1418,7 +1476,6 @@ class ArrayReader {
 
     std::shared_ptr<Buffer> validity_buffer;
     std::shared_ptr<Buffer> type_id_buffer;
-    std::shared_ptr<Buffer> offsets_buffer;
 
     RETURN_NOT_OK(GetValidityBuffer(is_valid_, &null_count, &validity_buffer));
 
@@ -1427,18 +1484,24 @@ class ArrayReader {
     RETURN_NOT_OK(
         GetIntArray<uint8_t>(json_type_ids->value.GetArray(), length_, &type_id_buffer));
 
-    if (type.mode() == UnionMode::DENSE) {
-      const auto& json_offsets = obj_.FindMember("OFFSET");
-      RETURN_NOT_ARRAY("OFFSET", json_offsets, obj_);
-      RETURN_NOT_OK(
-          GetIntArray<int32_t>(json_offsets->value.GetArray(), length_, &offsets_buffer));
-    }
-
     std::vector<std::shared_ptr<Array>> children;
     RETURN_NOT_OK(GetChildren(obj_, type, &children));
 
-    result_ = std::make_shared<UnionArray>(type_, length_, children, type_id_buffer,
-                                           offsets_buffer, validity_buffer, null_count);
+    if (type.mode() == UnionMode::SPARSE) {
+      result_ = std::make_shared<SparseUnionArray>(
+          type_, length_, children, type_id_buffer, validity_buffer, null_count);
+    } else {
+      const auto& json_offsets = obj_.FindMember("OFFSET");
+      RETURN_NOT_ARRAY("OFFSET", json_offsets, obj_);
+
+      std::shared_ptr<Buffer> offsets_buffer;
+      RETURN_NOT_OK(
+          GetIntArray<int32_t>(json_offsets->value.GetArray(), length_, &offsets_buffer));
+
+      result_ =
+          std::make_shared<DenseUnionArray>(type_, length_, children, type_id_buffer,
+                                            offsets_buffer, validity_buffer, null_count);
+    }
 
     return Status::OK();
   }
@@ -1455,18 +1518,30 @@ class ArrayReader {
                        dictionary_memo_);
     RETURN_NOT_OK(parser.Parse(&indices));
 
-    // Look up dictionary
-    int64_t dictionary_id = -1;
-    RETURN_NOT_OK(dictionary_memo_->GetId(field_.get(), &dictionary_id));
-
+    RETURN_NOT_OK(LookupDictionaryId(field_));
     std::shared_ptr<Array> dictionary;
-    RETURN_NOT_OK(dictionary_memo_->GetDictionary(dictionary_id, &dictionary));
+    RETURN_NOT_OK(dictionary_memo_->GetDictionary(dictionary_id_, &dictionary));
 
     result_ = std::make_shared<DictionaryArray>(field_->type(), indices, dictionary);
     return Status::OK();
   }
 
-  Status Visit(const ExtensionType& type) { return Status::NotImplemented(type.name()); }
+  Status Visit(const ExtensionType& type) {
+    std::shared_ptr<Array> storage_array;
+
+    ArrayReader parser(obj_, pool_, field_->WithType(type.storage_type()),
+                       dictionary_memo_);
+    // If the storage array is a dictionary array, lookup its dictionary id
+    // using the extension field.
+    // (the field is looked up by pointer, so the Field instance constructed
+    //  above wouldn't work)
+    if (parser.type_->id() == Type::DICTIONARY) {
+      RETURN_NOT_OK(parser.LookupDictionaryId(field_));
+    }
+    RETURN_NOT_OK(parser.Parse(&storage_array));
+    result_ = std::make_shared<ExtensionArray>(type_, storage_array);
+    return Status::OK();
+  }
 
   Status GetValidityBuffer(const std::vector<bool>& is_valid, int32_t* null_count,
                            std::shared_ptr<Buffer>* validity_buffer) {
@@ -1494,8 +1569,8 @@ class ArrayReader {
     RETURN_NOT_ARRAY("children", json_children, obj);
     const auto& json_children_arr = json_children->value.GetArray();
 
-    if (type.num_children() != static_cast<int>(json_children_arr.Size())) {
-      return Status::Invalid("Expected ", type.num_children(), " children, but got ",
+    if (type.num_fields() != static_cast<int>(json_children_arr.Size())) {
+      return Status::Invalid("Expected ", type.num_fields(), " children, but got ",
                              json_children_arr.Size());
     }
 
@@ -1503,7 +1578,7 @@ class ArrayReader {
       const rj::Value& json_child = json_children_arr[i];
       DCHECK(json_child.IsObject());
 
-      std::shared_ptr<Field> child_field = type.child(i);
+      std::shared_ptr<Field> child_field = type.field(i);
 
       auto it = json_child.FindMember("name");
       RETURN_NOT_STRING("name", it, json_child);
@@ -1544,12 +1619,20 @@ class ArrayReader {
     return Status::OK();
   }
 
+  Status LookupDictionaryId(const std::shared_ptr<Field>& field) {
+    if (dictionary_id_ == -1) {
+      RETURN_NOT_OK(dictionary_memo_->GetId(field.get(), &dictionary_id_));
+    }
+    return Status::OK();
+  }
+
  private:
   const RjObject& obj_;
   MemoryPool* pool_;
-  const std::shared_ptr<Field>& field_;
+  std::shared_ptr<Field> field_;
   std::shared_ptr<DataType> type_;
   DictionaryMemo* dictionary_memo_;
+  int64_t dictionary_id_;
 
   // Parsed common attributes
   std::vector<bool> is_valid_;
@@ -1575,13 +1658,11 @@ static Status ReadDictionary(const RjObject& obj, MemoryPool* pool,
   RETURN_NOT_OK(dictionary_memo->GetDictionaryType(id, &value_type));
   auto value_field = ::arrow::field("dummy", value_type);
 
-  // We need placeholder schema and dictionary memo to read the record
-  // batch, because the dictionary is embedded in a record batch with
-  // a single column
+  // We need a placeholder schema to read the record, because the dictionary
+  // is embedded in a record batch with a single column.
   std::shared_ptr<RecordBatch> batch;
-  DictionaryMemo dummy_memo;
   RETURN_NOT_OK(ReadRecordBatch(it_data->value, ::arrow::schema({value_field}),
-                                &dummy_memo, pool, &batch));
+                                dictionary_memo, pool, &batch));
 
   if (batch->num_columns() != 1) {
     return Status::Invalid("Dictionary record batch must only contain one field");

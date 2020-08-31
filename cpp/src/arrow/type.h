@@ -21,6 +21,7 @@
 #include <climits>
 #include <cstdint>
 #include <iosfwd>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -28,7 +29,6 @@
 
 #include "arrow/result.h"
 #include "arrow/type_fwd.h"  // IWYU pragma: export
-#include "arrow/util/checked_cast.h"
 #include "arrow/util/macros.h"
 #include "arrow/util/variant.h"
 #include "arrow/util/visibility.h"
@@ -128,8 +128,11 @@ struct Type {
     /// Struct of logical types
     STRUCT,
 
-    /// Unions of logical types
-    UNION,
+    /// Sparse unions of logical types
+    SPARSE_UNION,
+
+    /// Dense unions of logical types
+    DENSE_UNION,
 
     /// Dictionary-encoded type, also called "categorical" or "factor"
     /// in other programming languages. Holds the dictionary value
@@ -248,16 +251,31 @@ class ARROW_EXPORT DataType : public detail::Fingerprintable {
   /// \brief Return whether the types are equal
   bool Equals(const std::shared_ptr<DataType>& other) const;
 
-  const std::shared_ptr<Field>& child(int i) const { return children_[i]; }
+  ARROW_DEPRECATED("Use field(i)")
+  const std::shared_ptr<Field>& child(int i) const { return field(i); }
 
-  const std::vector<std::shared_ptr<Field>>& children() const { return children_; }
+  /// Returns the the child-field at index i.
+  const std::shared_ptr<Field>& field(int i) const { return children_[i]; }
 
-  int num_children() const { return static_cast<int>(children_.size()); }
+  ARROW_DEPRECATED("Use fields()")
+  const std::vector<std::shared_ptr<Field>>& children() const { return fields(); }
+
+  /// \brief Returns the children fields associated with this type.
+  const std::vector<std::shared_ptr<Field>>& fields() const { return children_; }
+
+  ARROW_DEPRECATED("Use num_fields()")
+  int num_children() const { return num_fields(); }
+
+  /// \brief Returns the number of children fields associated with this type.
+  int num_fields() const { return static_cast<int>(children_.size()); }
 
   Status Accept(TypeVisitor* visitor) const;
 
   /// \brief A string representation of the type, including any children
   virtual std::string ToString() const = 0;
+
+  /// \brief Return hash value (excluding metadata in child fields)
+  size_t Hash() const;
 
   /// \brief A string name of the type, omitting any child fields
   ///
@@ -468,6 +486,7 @@ class ARROW_EXPORT CTypeImpl : public BASE {
  public:
   static constexpr Type::type type_id = TYPE_ID;
   using c_type = C_TYPE;
+  using PhysicalType = DERIVED;
 
   CTypeImpl() : BASE(TYPE_ID) {}
 
@@ -482,6 +501,9 @@ class ARROW_EXPORT CTypeImpl : public BASE {
 
   std::string ToString() const override { return this->name(); }
 };
+
+template <typename DERIVED, typename BASE, Type::type TYPE_ID, typename C_TYPE>
+constexpr Type::type CTypeImpl<DERIVED, BASE, TYPE_ID, C_TYPE>::type_id;
 
 template <typename DERIVED, Type::type TYPE_ID, typename C_TYPE>
 class IntegerTypeImpl : public detail::CTypeImpl<DERIVED, IntegerType, TYPE_ID, C_TYPE> {
@@ -727,16 +749,25 @@ class ARROW_EXPORT MapType : public ListType {
 
   static constexpr const char* type_name() { return "map"; }
 
-  MapType(const std::shared_ptr<DataType>& key_type,
-          const std::shared_ptr<DataType>& item_type, bool keys_sorted = false);
+  MapType(std::shared_ptr<DataType> key_type, std::shared_ptr<DataType> item_type,
+          bool keys_sorted = false);
 
-  MapType(const std::shared_ptr<DataType>& key_type,
-          const std::shared_ptr<Field>& item_field, bool keys_sorted = false);
+  MapType(std::shared_ptr<DataType> key_type, std::shared_ptr<Field> item_field,
+          bool keys_sorted = false);
 
-  std::shared_ptr<Field> key_field() const { return value_type()->child(0); }
+  MapType(std::shared_ptr<Field> key_field, std::shared_ptr<Field> item_field,
+          bool keys_sorted = false);
+
+  explicit MapType(std::shared_ptr<Field> value_field, bool keys_sorted = false);
+
+  // Validating constructor
+  static Result<std::shared_ptr<DataType>> Make(std::shared_ptr<Field> value_field,
+                                                bool keys_sorted = false);
+
+  std::shared_ptr<Field> key_field() const { return value_type()->field(0); }
   std::shared_ptr<DataType> key_type() const { return key_field()->type(); }
 
-  std::shared_ptr<Field> item_field() const { return value_type()->child(1); }
+  std::shared_ptr<Field> item_field() const { return value_type()->field(1); }
   std::shared_ptr<DataType> item_type() const { return item_field()->type(); }
 
   std::string ToString() const override;
@@ -789,6 +820,8 @@ class ARROW_EXPORT BaseBinaryType : public DataType {
  public:
   using DataType::DataType;
 };
+
+constexpr int64_t kBinaryMemoryLimit = std::numeric_limits<int32_t>::max() - 1;
 
 /// \brief Concrete type class for variable-size binary data
 class ARROW_EXPORT BinaryType : public BaseBinaryType {
@@ -979,9 +1012,6 @@ class ARROW_EXPORT Decimal128Type : public DecimalType {
   /// Decimal128Type constructor that returns an error on invalid input.
   static Result<std::shared_ptr<DataType>> Make(int32_t precision, int32_t scale);
 
-  ARROW_DEPRECATED("Use Result-returning version")
-  static Status Make(int32_t precision, int32_t scale, std::shared_ptr<DataType>* out);
-
   std::string ToString() const override;
   std::string name() const override { return "decimal"; }
 
@@ -992,25 +1022,22 @@ class ARROW_EXPORT Decimal128Type : public DecimalType {
 /// \brief Concrete type class for union data
 class ARROW_EXPORT UnionType : public NestedType {
  public:
-  static constexpr Type::type type_id = Type::UNION;
   static constexpr int8_t kMaxTypeCode = 127;
   static constexpr int kInvalidChildId = -1;
 
-  static constexpr const char* type_name() { return "union"; }
-
-  UnionType(const std::vector<std::shared_ptr<Field>>& fields,
-            const std::vector<int8_t>& type_codes,
-            UnionMode::type mode = UnionMode::SPARSE);
-
-  // A constructor variant that validates input parameters
   static Result<std::shared_ptr<DataType>> Make(
       const std::vector<std::shared_ptr<Field>>& fields,
-      const std::vector<int8_t>& type_codes, UnionMode::type mode = UnionMode::SPARSE);
+      const std::vector<int8_t>& type_codes, UnionMode::type mode = UnionMode::SPARSE) {
+    if (mode == UnionMode::SPARSE) {
+      return sparse_union(fields, type_codes);
+    } else {
+      return dense_union(fields, type_codes);
+    }
+  }
 
   DataTypeLayout layout() const override;
 
   std::string ToString() const override;
-  std::string name() const override { return "union"; }
 
   /// The array of logical type ids.
   ///
@@ -1023,25 +1050,57 @@ class ARROW_EXPORT UnionType : public NestedType {
 
   uint8_t max_type_code() const;
 
-  UnionMode::type mode() const { return mode_; }
+  UnionMode::type mode() const;
 
- private:
-  std::string ComputeFingerprint() const override;
+ protected:
+  UnionType(std::vector<std::shared_ptr<Field>> fields, std::vector<int8_t> type_codes,
+            Type::type id);
 
   static Status ValidateParameters(const std::vector<std::shared_ptr<Field>>& fields,
                                    const std::vector<int8_t>& type_codes,
                                    UnionMode::type mode);
 
-  UnionMode::type mode_;
+ private:
+  std::string ComputeFingerprint() const override;
 
   std::vector<int8_t> type_codes_;
   std::vector<int> child_ids_;
 };
 
+class ARROW_EXPORT SparseUnionType : public UnionType {
+ public:
+  static constexpr Type::type type_id = Type::SPARSE_UNION;
+
+  static constexpr const char* type_name() { return "sparse_union"; }
+
+  SparseUnionType(std::vector<std::shared_ptr<Field>> fields,
+                  std::vector<int8_t> type_codes);
+
+  // A constructor variant that validates input parameters
+  static Result<std::shared_ptr<DataType>> Make(
+      std::vector<std::shared_ptr<Field>> fields, std::vector<int8_t> type_codes);
+
+  std::string name() const override { return "sparse_union"; }
+};
+
+class ARROW_EXPORT DenseUnionType : public UnionType {
+ public:
+  static constexpr Type::type type_id = Type::DENSE_UNION;
+
+  static constexpr const char* type_name() { return "dense_union"; }
+
+  DenseUnionType(std::vector<std::shared_ptr<Field>> fields,
+                 std::vector<int8_t> type_codes);
+
+  // A constructor variant that validates input parameters
+  static Result<std::shared_ptr<DataType>> Make(
+      std::vector<std::shared_ptr<Field>> fields, std::vector<int8_t> type_codes);
+
+  std::string name() const override { return "dense_union"; }
+};
+
 // ----------------------------------------------------------------------
 // Date and time types
-
-enum class DateUnit : char { DAY = 0, MILLI = 1 };
 
 /// \brief Base type for all date and time types
 class ARROW_EXPORT TemporalType : public FixedWidthType {
@@ -1069,6 +1128,7 @@ class ARROW_EXPORT Date32Type : public DateType {
   static constexpr Type::type type_id = Type::DATE32;
   static constexpr DateUnit UNIT = DateUnit::DAY;
   using c_type = int32_t;
+  using PhysicalType = Int32Type;
 
   static constexpr const char* type_name() { return "date32"; }
 
@@ -1091,6 +1151,7 @@ class ARROW_EXPORT Date64Type : public DateType {
   static constexpr Type::type type_id = Type::DATE64;
   static constexpr DateUnit UNIT = DateUnit::MILLI;
   using c_type = int64_t;
+  using PhysicalType = Int64Type;
 
   static constexpr const char* type_name() { return "date64"; }
 
@@ -1128,6 +1189,7 @@ class ARROW_EXPORT Time32Type : public TimeType {
  public:
   static constexpr Type::type type_id = Type::TIME32;
   using c_type = int32_t;
+  using PhysicalType = Int32Type;
 
   static constexpr const char* type_name() { return "time32"; }
 
@@ -1146,6 +1208,7 @@ class ARROW_EXPORT Time64Type : public TimeType {
  public:
   static constexpr Type::type type_id = Type::TIME64;
   using c_type = int64_t;
+  using PhysicalType = Int64Type;
 
   static constexpr const char* type_name() { return "time64"; }
 
@@ -1196,6 +1259,7 @@ class ARROW_EXPORT TimestampType : public TemporalType, public ParametricType {
 
   static constexpr Type::type type_id = Type::TIMESTAMP;
   using c_type = int64_t;
+  using PhysicalType = Int64Type;
 
   static constexpr const char* type_name() { return "timestamp"; }
 
@@ -1241,6 +1305,7 @@ class ARROW_EXPORT MonthIntervalType : public IntervalType {
  public:
   static constexpr Type::type type_id = Type::INTERVAL_MONTHS;
   using c_type = int32_t;
+  using PhysicalType = Int32Type;
 
   static constexpr const char* type_name() { return "month_interval"; }
 
@@ -1269,6 +1334,8 @@ class ARROW_EXPORT DayTimeIntervalType : public IntervalType {
     }
   };
   using c_type = DayMilliseconds;
+  using PhysicalType = DayTimeIntervalType;
+
   static_assert(sizeof(DayMilliseconds) == 8,
                 "DayMilliseconds struct assumed to be of size 8 bytes");
   static constexpr Type::type type_id = Type::INTERVAL_DAY_TIME;
@@ -1292,6 +1359,7 @@ class ARROW_EXPORT DurationType : public TemporalType, public ParametricType {
 
   static constexpr Type::type type_id = Type::DURATION;
   using c_type = int64_t;
+  using PhysicalType = Int64Type;
 
   static constexpr const char* type_name() { return "duration"; }
 
@@ -1367,10 +1435,6 @@ class ARROW_EXPORT DictionaryUnifier {
   static Result<std::unique_ptr<DictionaryUnifier>> Make(
       std::shared_ptr<DataType> value_type, MemoryPool* pool = default_memory_pool());
 
-  ARROW_DEPRECATED("Use Result-returning version")
-  static Status Make(MemoryPool* pool, std::shared_ptr<DataType> value_type,
-                     std::unique_ptr<DictionaryUnifier>* out);
-
   /// \brief Append dictionary to the internal memo
   virtual Status Unify(const Array& dictionary) = 0;
 
@@ -1397,7 +1461,7 @@ class ARROW_EXPORT DictionaryUnifier {
 ///
 /// Represents a path to a nested field using indices of child fields.
 /// For example, given indices {5, 9, 3} the field would be retrieved with
-/// schema->field(5)->type()->child(9)->type()->child(3)
+/// schema->field(5)->type()->field(9)->type()->field(3)
 ///
 /// Attempting to retrieve a child field using a FieldPath which is not valid for
 /// a given schema will raise an error. Invalid FieldPaths include:
@@ -1494,7 +1558,8 @@ class ARROW_EXPORT FieldRef {
 
   /// Construct a by-name FieldRef. Multiple fields may match a by-name FieldRef:
   /// [f for f in schema.fields where f.name == self.name]
-  FieldRef(std::string name) : impl_(std::move(name)) {}  // NOLINT runtime/explicit
+  FieldRef(std::string name) : impl_(std::move(name)) {}    // NOLINT runtime/explicit
+  FieldRef(const char* name) : impl_(std::string(name)) {}  // NOLINT runtime/explicit
 
   /// Equivalent to a single index string of indices.
   FieldRef(int index) : impl_(FieldPath({index})) {}  // NOLINT runtime/explicit
@@ -1548,6 +1613,12 @@ class ARROW_EXPORT FieldRef {
   std::vector<FieldPath> FindAll(const Field& field) const;
   std::vector<FieldPath> FindAll(const DataType& type) const;
   std::vector<FieldPath> FindAll(const FieldVector& fields) const;
+
+  /// \brief Convenience function which applies FindAll to arg's type or schema.
+  std::vector<FieldPath> FindAll(const Array& array) const;
+  std::vector<FieldPath> FindAll(const ChunkedArray& array) const;
+  std::vector<FieldPath> FindAll(const RecordBatch& batch) const;
+  std::vector<FieldPath> FindAll(const Table& table) const;
 
   /// \brief Convenience function: raise an error if matches is empty.
   template <typename T>
@@ -1692,15 +1763,6 @@ class ARROW_EXPORT Schema : public detail::Fingerprintable,
   Result<std::shared_ptr<Schema>> RemoveField(int i) const;
   Result<std::shared_ptr<Schema>> SetField(int i,
                                            const std::shared_ptr<Field>& field) const;
-
-  ARROW_DEPRECATED("Use Result-returning version")
-  Status AddField(int i, const std::shared_ptr<Field>& field,
-                  std::shared_ptr<Schema>* out) const;
-  ARROW_DEPRECATED("Use Result-returning version")
-  Status RemoveField(int i, std::shared_ptr<Schema>* out) const;
-  ARROW_DEPRECATED("Use Result-returning version")
-  Status SetField(int i, const std::shared_ptr<Field>& field,
-                  std::shared_ptr<Schema>* out) const;
 
   /// \brief Replace key-value metadata with new metadata
   ///
@@ -1854,5 +1916,15 @@ ARROW_EXPORT
 Result<std::shared_ptr<Schema>> UnifySchemas(
     const std::vector<std::shared_ptr<Schema>>& schemas,
     Field::MergeOptions field_merge_options = Field::MergeOptions::Defaults());
+
+namespace internal {
+
+ARROW_EXPORT
+std::string ToString(Type::type id);
+
+ARROW_EXPORT
+std::string ToString(TimeUnit::type unit);
+
+}  // namespace internal
 
 }  // namespace arrow

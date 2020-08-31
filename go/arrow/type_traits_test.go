@@ -109,6 +109,11 @@ func TestDecimal128Traits(t *testing.T) {
 		beg := i * arrow.Decimal128SizeBytes
 		end := (i + 1) * arrow.Decimal128SizeBytes
 		arrow.Decimal128Traits.PutValue(b2[beg:end], decimal128.New(int64(i), 10))
+
+		if got, want := arrow.Decimal128Traits.GetValue(b2[beg:end]),
+			decimal128.New(int64(i), 10); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -143,6 +148,11 @@ func TestMonthIntervalTraits(t *testing.T) {
 		beg := i * arrow.MonthIntervalSizeBytes
 		end := (i + 1) * arrow.MonthIntervalSizeBytes
 		arrow.MonthIntervalTraits.PutValue(b2[beg:end], arrow.MonthInterval(i))
+
+		if got, want := arrow.MonthIntervalTraits.GetValue(b2[beg:end]),
+			arrow.MonthInterval(i); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {
@@ -177,6 +187,11 @@ func TestDayTimeIntervalTraits(t *testing.T) {
 		beg := i * arrow.DayTimeIntervalSizeBytes
 		end := (i + 1) * arrow.DayTimeIntervalSizeBytes
 		arrow.DayTimeIntervalTraits.PutValue(b2[beg:end], arrow.DayTimeInterval{int32(i), int32(i)})
+
+		if got, want := arrow.DayTimeIntervalTraits.GetValue(b2[beg:end]),
+			(arrow.DayTimeInterval{int32(i), int32(i)}); !reflect.DeepEqual(got, want) {
+			t.Fatalf("invalid value[%d]. got=%v, want=%v", i, got, want)
+		}
 	}
 
 	if !reflect.DeepEqual(b1, b2) {

@@ -53,14 +53,14 @@ RUN apt-get update -y -q && \
 # and use pre-built binaries where possible
 RUN printf "\
     options(Ncpus = parallel::detectCores(), \
-            repos = 'https://demo.rstudiopm.com/all/__linux__/bionic/latest', \
+            repos = 'https://packagemanager.rstudio.com/cran/__linux__/bionic/latest', \
             HTTPUserAgent = sprintf(\
                 'R/%%s R (%%s)', getRversion(), \
                 paste(getRversion(), R.version\$platform, R.version\$arch, R.version\$os)))\n" \
     >> /usr/local/RDsan/lib/R/etc/Rprofile.site
 
 # Also ensure parallel compilation of C/C++ code
-RUN echo "MAKEFLAGS=-j$(R --slave -e 'cat(parallel::detectCores())')" >> /usr/local/RDsan/lib/R/etc/Makeconf
+RUN echo "MAKEFLAGS=-j$(R -s -e 'cat(parallel::detectCores())')" >> /usr/local/RDsan/lib/R/etc/Makeconf
 
 # Prioritize system packages and local installation
 # The following dependencies will be downloaded due to missing/invalid packages

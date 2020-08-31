@@ -35,6 +35,7 @@
 #include "arrow/pretty_print.h"
 #include "arrow/record_batch.h"
 #include "arrow/status.h"
+#include "arrow/testing/extension_type.h"
 #include "arrow/testing/gtest_util.h"
 #include "arrow/type.h"
 #include "arrow/util/io_util.h"
@@ -181,6 +182,11 @@ static Status ValidateArrowVsJson(const std::string& arrow_path,
 
 Status RunCommand(const std::string& json_path, const std::string& arrow_path,
                   const std::string& command) {
+  // Make sure the required extension types are registered, as they will be
+  // referenced in test data.
+  ExtensionTypeGuard uuid_ext_guard(uuid());
+  ExtensionTypeGuard dict_ext_guard(dict_extension_type());
+
   if (json_path == "") {
     return Status::Invalid("Must specify json file name");
   }
@@ -249,7 +255,7 @@ static const char* JSON_EXAMPLE = R"example(
     "fields": [
       {
         "name": "foo",
-        "type": {"name": "int", "isSigned": true, "bitWidth": 32},
+        "type": {"name": "int", "isSigned": true, "bitWidth": 64},
         "nullable": true, "children": []
       },
       {
@@ -266,7 +272,7 @@ static const char* JSON_EXAMPLE = R"example(
         {
           "name": "foo",
           "count": 5,
-          "DATA": [1, 2, 3, 4, 5],
+          "DATA": ["1", "2", "3", "4", "5"],
           "VALIDITY": [1, 0, 1, 1, 1]
         },
         {
@@ -283,7 +289,7 @@ static const char* JSON_EXAMPLE = R"example(
         {
           "name": "foo",
           "count": 4,
-          "DATA": [1, 2, 3, 4],
+          "DATA": ["-1", "0", "9223372036854775807", "-9223372036854775808"],
           "VALIDITY": [1, 0, 1, 1]
         },
         {

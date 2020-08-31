@@ -81,7 +81,7 @@ pub trait Array: fmt::Debug + Send + Sync + ArrayEqual + JsonEqual {
     /// Returns a borrowed & reference-counted pointer to the underlying data of this array.
     fn data_ref(&self) -> &ArrayDataRef;
 
-    /// Returns a reference to the [`DataType`](crate::datatype::DataType) of this array.
+    /// Returns a reference to the [`DataType`](crate::datatypes::DataType) of this array.
     ///
     /// # Example:
     ///
@@ -272,6 +272,7 @@ pub fn make_array(data: ArrayDataRef) -> ArrayRef {
         DataType::Utf8 => Arc::new(StringArray::from(data)) as ArrayRef,
         DataType::List(_) => Arc::new(ListArray::from(data)) as ArrayRef,
         DataType::Struct(_) => Arc::new(StructArray::from(data)) as ArrayRef,
+        DataType::Union(_) => Arc::new(UnionArray::from(data)) as ArrayRef,
         DataType::FixedSizeList(_, _) => {
             Arc::new(FixedSizeListArray::from(data)) as ArrayRef
         }
@@ -302,6 +303,7 @@ pub fn make_array(data: ArrayDataRef) -> ArrayRef {
             }
             dt => panic!("Unexpected dictionary key type {:?}", dt),
         },
+        DataType::Null => Arc::new(NullArray::from(data)) as ArrayRef,
         dt => panic!("Unexpected data type {:?}", dt),
     }
 }
@@ -310,7 +312,7 @@ pub fn make_array(data: ArrayDataRef) -> ArrayRef {
 ///
 /// # Panics
 ///
-/// Panics if `offset + length < data.len()`.
+/// Panics if `offset + length > data.len()`.
 fn slice_data(data: ArrayDataRef, mut offset: usize, length: usize) -> ArrayDataRef {
     assert!((offset + length) <= data.len());
 
@@ -785,6 +787,16 @@ def_numeric_from_vec!(
     i64,
     DataType::Duration(TimeUnit::Nanosecond)
 );
+def_numeric_from_vec!(
+    TimestampMillisecondType,
+    i64,
+    DataType::Timestamp(TimeUnit::Millisecond, None)
+);
+def_numeric_from_vec!(
+    TimestampMicrosecondType,
+    i64,
+    DataType::Timestamp(TimeUnit::Microsecond, None)
+);
 
 impl<T: ArrowTimestampType> PrimitiveArray<T> {
     /// Construct a timestamp array from a vec of i64 values and an optional timezone
@@ -1248,6 +1260,11 @@ impl BinaryArray {
     fn value_offset_at(&self, i: usize) -> i32 {
         unsafe { *self.value_offsets.get().add(i) }
     }
+
+    // Returns a new binary array builder
+    pub fn builder(capacity: usize) -> BinaryBuilder {
+        BinaryBuilder::new(capacity)
+    }
 }
 
 impl StringArray {
@@ -1296,6 +1313,11 @@ impl StringArray {
     #[inline]
     fn value_offset_at(&self, i: usize) -> i32 {
         unsafe { *self.value_offsets.get().add(i) }
+    }
+
+    // Returns a new string array builder
+    pub fn builder(capacity: usize) -> StringBuilder {
+        StringBuilder::new(capacity)
     }
 }
 

@@ -1,0 +1,22 @@
+package arrow
+
+// Base class for scalar values, representing a single value occupying
+// an array "slot"
+//type Scalar interface {
+//}
+
+type EqualityComparable interface {
+	Equals(other interface{}) bool
+	NotEquals(other interface{}) bool
+}
+
+type ScalarInt123 int
+
+func (left ScalarInt123) Equals(other interface{}) bool {
+	right, ok := other.(ScalarInt123)
+	return ok && left == right
+}
+
+func (left ScalarInt123) NotEquals(other interface{}) bool {
+	return !left.Equals(other)
+}

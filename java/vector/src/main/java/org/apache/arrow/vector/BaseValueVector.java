@@ -20,17 +20,16 @@ package org.apache.arrow.vector;
 import java.util.Collections;
 import java.util.Iterator;
 
-import org.apache.arrow.memory.BaseAllocator;
+import org.apache.arrow.memory.ArrowBuf;
 import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.ReferenceManager;
+import org.apache.arrow.memory.util.CommonUtil;
 import org.apache.arrow.util.DataSizeRoundingUtil;
 import org.apache.arrow.util.Preconditions;
 import org.apache.arrow.vector.util.TransferPair;
 import org.apache.arrow.vector.util.ValueVectorUtility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import io.netty.buffer.ArrowBuf;
 
 /**
  * Base class for other Arrow Vector Types.  Provides basic functionality around
@@ -142,7 +141,7 @@ public abstract class BaseValueVector implements ValueVector {
     } else {
       bufferSize += DataSizeRoundingUtil.roundUpTo8Multiple((long) valueCount * typeWidth);
     }
-    return BaseAllocator.nextPowerOfTwo(bufferSize);
+    return CommonUtil.nextPowerOfTwo(bufferSize);
   }
 
   /**

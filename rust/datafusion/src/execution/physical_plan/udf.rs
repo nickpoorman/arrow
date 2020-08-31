@@ -27,7 +27,7 @@ use arrow::record_batch::RecordBatch;
 use std::sync::Arc;
 
 /// Scalar UDF
-pub type ScalarUdf = fn(input: &Vec<ArrayRef>) -> Result<ArrayRef>;
+pub type ScalarUdf = fn(input: &[ArrayRef]) -> Result<ArrayRef>;
 
 /// Scalar UDF Expression
 #[derive(Clone)]
@@ -91,6 +91,10 @@ impl PhysicalExpr for ScalarFunctionExpr {
 
     fn data_type(&self, _input_schema: &Schema) -> Result<DataType> {
         Ok(self.return_type.clone())
+    }
+
+    fn nullable(&self, _input_schema: &Schema) -> Result<bool> {
+        Ok(true)
     }
 
     fn evaluate(&self, batch: &RecordBatch) -> Result<ArrayRef> {

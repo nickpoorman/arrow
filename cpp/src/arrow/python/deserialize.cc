@@ -38,7 +38,7 @@
 #include "arrow/table.h"
 #include "arrow/util/checked_cast.h"
 #include "arrow/util/logging.h"
-#include "arrow/util/parsing.h"
+#include "arrow/util/value_parsing.h"
 
 #include "arrow/python/common.h"
 #include "arrow/python/datetime.h"
@@ -50,7 +50,7 @@
 namespace arrow {
 
 using internal::checked_cast;
-using internal::StringConverter;
+using internal::ParseValue;
 
 namespace py {
 
@@ -231,13 +231,12 @@ Status GetValue(PyObject* context, const Array& arr, int64_t index, int8_t type,
 Status GetPythonTypes(const UnionArray& data, std::vector<int8_t>* result) {
   ARROW_CHECK(result != nullptr);
   auto type = data.type();
-  for (int i = 0; i < type->num_children(); ++i) {
-    StringConverter<Int8Type> converter;
+  for (int i = 0; i < type->num_fields(); ++i) {
     int8_t tag = 0;
-    const std::string& data = type->child(i)->name();
-    if (!converter(data.c_str(), data.size(), &tag)) {
+    const std::string& data = type->field(i)->name();
+    if (!ParseValue<Int8Type>(data.c_str(), data.size(), &tag)) {
       return Status::SerializationError("Cannot convert string: \"",
-                                        type->child(i)->name(), "\" to int8_t");
+                                        type->field(i)->name(), "\" to int8_t");
     }
     result->push_back(tag);
   }
@@ -250,7 +249,7 @@ Status DeserializeSequence(PyObject* context, const Array& array, int64_t start_
                            const SerializedPyObject& blobs,
                            CreateSequenceFn&& create_sequence, SetItemFn&& set_item,
                            PyObject** out) {
-  const auto& data = checked_cast<const UnionArray&>(array);
+  const auto& data = checked_cast<const DenseUnionArray&>(array);
   OwnedRef result(create_sequence(stop_idx - start_idx));
   RETURN_IF_PYERROR();
   const int8_t* type_codes = data.raw_type_codes();
@@ -265,7 +264,7 @@ Status DeserializeSequence(PyObject* context, const Array& array, int64_t start_
       const int64_t offset = value_offsets[i];
       const uint8_t type = type_codes[i];
       PyObject* value;
-      RETURN_NOT_OK(GetValue(context, *data.child(type), offset, python_types[type], base,
+      RETURN_NOT_OK(GetValue(context, *data.field(type), offset, python_types[type], base,
                              blobs, &value));
       RETURN_NOT_OK(set_item(result.obj(), i - start_idx, value));
     }
@@ -434,7 +433,7 @@ Status GetSerializedFromComponents(int num_tensors,
 
   // Zero-copy reconstruct sparse tensors
   for (int i = 0, n = num_sparse_tensors.num_total_tensors(); i < n; ++i) {
-    ipc::internal::IpcPayload payload;
+    ipc::IpcPayload payload;
     RETURN_NOT_OK(GetBuffer(buffer_index++, &payload.metadata));
 
     ARROW_ASSIGN_OR_RAISE(

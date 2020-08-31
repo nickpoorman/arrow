@@ -17,7 +17,7 @@
 
 os: linux
 arch: arm64
-dist: bionic
+dist: focal
 language: minimal
 
 addons:
@@ -51,7 +51,8 @@ script:
   - rake version:update
   - |
     rake docker:pull || :
-  - rake {{ build_task }}
+  - rake BUILD_DIR=build {{ build_task }}
+  - sudo rm -rf */*/build
   - popd
 
 after_success:
@@ -64,11 +65,11 @@ after_success:
   - popd
   - |
     sudo -H pip3 install \
-      click \
+      "click>=7.1" \
       github3.py \
       jinja2 \
       jira \
-      pygit2==0.26.4 \
+      pygit2==0.28.2 \
       ruamel.yaml \
       setuptools_scm \
       toolz

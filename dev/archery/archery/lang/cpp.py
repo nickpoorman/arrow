@@ -52,7 +52,7 @@ class CppConfiguration:
                  with_compute=None, with_csv=None, with_cuda=None,
                  with_dataset=None, with_filesystem=None, with_flight=None,
                  with_gandiva=None, with_hdfs=None, with_hiveserver2=None,
-                 with_ipc=None, with_json=None, with_jni=None,
+                 with_ipc=True, with_json=None, with_jni=None,
                  with_mimalloc=None,
                  with_parquet=None, with_plasma=None, with_python=True,
                  with_r=None, with_s3=None,
@@ -62,6 +62,7 @@ class CppConfiguration:
                  # extras
                  with_lint_only=False,
                  use_gold_linker=True,
+                 simd_level="SSE4_2",
                  cmake_extras=None):
         self._cc = cc
         self._cxx = cxx
@@ -111,6 +112,7 @@ class CppConfiguration:
 
         self.with_lint_only = with_lint_only
         self.use_gold_linker = use_gold_linker
+        self.simd_level = simd_level
 
         self.cmake_extras = cmake_extras
 
@@ -151,7 +153,7 @@ class CppConfiguration:
             return self._cc
 
         if self.with_fuzzing:
-            return f"clang-{LLVM_VERSION}"
+            return "clang-{}".format(LLVM_VERSION)
 
         return None
 
@@ -161,7 +163,7 @@ class CppConfiguration:
             return self._cxx
 
         if self.with_fuzzing:
-            return f"clang++-{LLVM_VERSION}"
+            return "clang++-{}".format(LLVM_VERSION)
 
         return None
 
@@ -232,6 +234,7 @@ class CppConfiguration:
         broken_with_gold_ld = [self.with_fuzzing, self.with_gandiva]
         if self.use_gold_linker and not any(broken_with_gold_ld):
             yield ("ARROW_USE_LD_GOLD", truthifier(self.use_gold_linker))
+        yield ("ARROW_SIMD_LEVEL", or_else(self.simd_level, "SSE4_2"))
 
         # Detect custom conda toolchain
         if self.use_conda:
@@ -261,7 +264,8 @@ class CppConfiguration:
     @property
     def definitions(self):
         extras = list(self.cmake_extras) if self.cmake_extras else []
-        return [f"-D{d[0]}={d[1]}" for d in self._gen_defs()] + extras
+        definitions = ["-D{}={}".format(d[0], d[1]) for d in self._gen_defs()]
+        return definitions + extras
 
     @property
     def environment(self):

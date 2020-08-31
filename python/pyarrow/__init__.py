@@ -29,6 +29,7 @@ streaming messaging and interprocess communication.
 For more information see the official page at https://arrow.apache.org
 """
 
+import gc as _gc
 import os as _os
 import sys as _sys
 
@@ -39,6 +40,7 @@ except ImportError:
     try:
         import setuptools_scm
         # Code duplicated from setup.py to avoid a dependency on each other
+
         def parse_git(root, **kwargs):
             """
             Parse function for setuptools_scm that ignores tags for non-C++
@@ -53,8 +55,13 @@ except ImportError:
     except ImportError:
         __version__ = None
 
-
-import pyarrow.compat as compat
+# ARROW-8684: Disable GC while initializing Cython extension module,
+# to workaround Cython bug in https://github.com/cython/cython/issues/3603
+_gc_enabled = _gc.isenabled()
+_gc.disable()
+import pyarrow.lib as _lib
+if _gc_enabled:
+    _gc.enable()
 
 from pyarrow.lib import cpu_count, set_cpu_count
 from pyarrow.lib import (null, bool_,
@@ -83,7 +90,7 @@ from pyarrow.lib import (null, bool_,
                          schema,
                          unify_schemas,
                          Array, Tensor,
-                         array, chunked_array, record_batch, table,
+                         array, chunked_array, record_batch, table, nulls,
                          SparseCOOTensor, SparseCSRMatrix, SparseCSCMatrix,
                          SparseCSFTensor,
                          infer_type, from_numpy_dtype,
@@ -131,6 +138,7 @@ from pyarrow.lib import (MemoryPool, LoggingMemoryPool, ProxyMemoryPool,
 from pyarrow.lib import (HdfsFile, NativeFile, PythonFile,
                          BufferedInputStream, BufferedOutputStream,
                          CompressedInputStream, CompressedOutputStream,
+                         TransformInputStream, transcoding_input_stream,
                          FixedSizeBufferWriter,
                          BufferReader, BufferOutputStream,
                          OSFile, MemoryMappedFile, memory_map,
@@ -177,6 +185,7 @@ import pyarrow.types as types
 
 # Entry point for starting the plasma store
 
+
 def _plasma_store_entry_point():
     """Entry point for starting the plasma store.
 
@@ -192,6 +201,7 @@ def _plasma_store_entry_point():
 
 # ----------------------------------------------------------------------
 # Deprecations
+
 
 from pyarrow.util import _deprecate_api  # noqa
 
@@ -209,7 +219,7 @@ read_tensor = _deprecate_api("read_tensor", "ipc.read_tensor",
                              ipc.read_tensor, "0.17.0")
 
 write_tensor = _deprecate_api("write_tensor", "ipc.write_tensor",
-                             ipc.write_tensor, "0.17.0")
+                              ipc.write_tensor, "0.17.0")
 
 get_record_batch_size = _deprecate_api("get_record_batch_size",
                                        "ipc.get_record_batch_size",
@@ -233,6 +243,7 @@ from pyarrow.ipc import (Message, MessageReader,
 # ----------------------------------------------------------------------
 # Returning absolute path to the pyarrow include directory (if bundled, e.g. in
 # wheels)
+
 
 def get_include():
     """
@@ -272,6 +283,49 @@ def get_libraries():
     or Cython extensions using pyarrow
     """
     return ['arrow', 'arrow_python']
+
+
+def create_library_symlinks():
+    """
+    With Linux and macOS wheels, the bundled shared libraries have an embedded
+    ABI version like libarrow.so.17 or libarrow.17.dylib and so linking to them
+    with -larrow won't work unless we create symlinks at locations like
+    site-packages/pyarrow/libarrow.so. This unfortunate workaround addresses
+    prior problems we had with shipping two copies of the shared libraries to
+    permit third party projects like turbodbc to build their C++ extensions
+    against the pyarrow wheels.
+
+    This function must only be invoked once and only when the shared libraries
+    are bundled with the Python package, which should only apply to wheel-based
+    installs. It requires write access to the site-packages/pyarrow directory
+    and so depending on your system may need to be run with root.
+    """
+    import glob
+    if _sys.platform == 'win32':
+        return
+    package_cwd = _os.path.dirname(__file__)
+
+    if _sys.platform == 'linux':
+        bundled_libs = glob.glob(_os.path.join(package_cwd, '*.so.*'))
+
+        def get_symlink_path(hard_path):
+            return hard_path.rsplit('.', 1)[0]
+    else:
+        bundled_libs = glob.glob(_os.path.join(package_cwd, '*.*.dylib'))
+
+        def get_symlink_path(hard_path):
+            return '.'.join((hard_path.split('.')[0], 'dylib'))
+
+    for lib_hard_path in bundled_libs:
+        symlink_path = get_symlink_path(lib_hard_path)
+        if _os.path.exists(symlink_path):
+            continue
+        try:
+            _os.symlink(lib_hard_path, symlink_path)
+        except PermissionError:
+            print("Tried creating symlink {}. If you need to link to "
+                  "bundled shared libraries, run "
+                  "pyarrow._setup_bundled_symlinks() as root")
 
 
 def get_library_dirs():

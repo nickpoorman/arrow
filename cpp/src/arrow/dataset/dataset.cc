@@ -23,24 +23,41 @@
 #include "arrow/dataset/dataset_internal.h"
 #include "arrow/dataset/filter.h"
 #include "arrow/dataset/scanner.h"
+#include "arrow/table.h"
 #include "arrow/util/bit_util.h"
 #include "arrow/util/iterator.h"
+#include "arrow/util/logging.h"
 #include "arrow/util/make_unique.h"
 
 namespace arrow {
 namespace dataset {
 
-Fragment::Fragment(std::shared_ptr<Expression> partition_expression)
-    : partition_expression_(partition_expression ? partition_expression : scalar(true)) {}
+Fragment::Fragment(std::shared_ptr<Expression> partition_expression,
+                   std::shared_ptr<Schema> physical_schema)
+    : partition_expression_(std::move(partition_expression)),
+      physical_schema_(std::move(physical_schema)) {
+  DCHECK_NE(partition_expression_, nullptr);
+}
 
-Result<std::shared_ptr<Schema>> InMemoryFragment::ReadPhysicalSchema() { return schema_; }
+Result<std::shared_ptr<Schema>> Fragment::ReadPhysicalSchema() {
+  auto lock = physical_schema_mutex_.Lock();
+  if (physical_schema_ == NULLPTR) {
+    ARROW_ASSIGN_OR_RAISE(physical_schema_, ReadPhysicalSchemaImpl());
+  }
+  return physical_schema_;
+}
+
+Result<std::shared_ptr<Schema>> InMemoryFragment::ReadPhysicalSchemaImpl() {
+  return physical_schema_;
+}
 
 InMemoryFragment::InMemoryFragment(std::shared_ptr<Schema> schema,
                                    RecordBatchVector record_batches,
                                    std::shared_ptr<Expression> partition_expression)
-    : Fragment(std::move(partition_expression)),
-      schema_(std::move(schema)),
-      record_batches_(std::move(record_batches)) {}
+    : Fragment(std::move(partition_expression), std::move(schema)),
+      record_batches_(std::move(record_batches)) {
+  DCHECK_NE(physical_schema_, nullptr);
+}
 
 InMemoryFragment::InMemoryFragment(RecordBatchVector record_batches,
                                    std::shared_ptr<Expression> partition_expression)
@@ -70,6 +87,12 @@ Result<ScanTaskIterator> InMemoryFragment::Scan(std::shared_ptr<ScanOptions> opt
   return MakeMapIterator(fn, std::move(batches_it));
 }
 
+Dataset::Dataset(std::shared_ptr<Schema> schema,
+                 std::shared_ptr<Expression> partition_expression)
+    : schema_(std::move(schema)), partition_expression_(std::move(partition_expression)) {
+  DCHECK_NE(partition_expression_, nullptr);
+}
+
 Result<std::shared_ptr<ScannerBuilder>> Dataset::NewScan(
     std::shared_ptr<ScanContext> context) {
   return std::make_shared<ScannerBuilder>(this->shared_from_this(), context);
@@ -79,13 +102,8 @@ Result<std::shared_ptr<ScannerBuilder>> Dataset::NewScan() {
   return NewScan(std::make_shared<ScanContext>());
 }
 
-FragmentIterator Dataset::GetFragments() { return GetFragments(scalar(true)); }
-
 FragmentIterator Dataset::GetFragments(std::shared_ptr<Expression> predicate) {
-  if (partition_expression_) {
-    predicate = predicate->Assume(*partition_expression_);
-  }
-
+  predicate = predicate->Assume(*partition_expression_);
   return predicate->IsSatisfiable() ? GetFragmentsImpl(std::move(predicate))
                                     : MakeEmptyIterator<std::shared_ptr<Fragment>>();
 }

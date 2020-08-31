@@ -33,16 +33,21 @@ use crate::datasource::parquet::ParquetTable;
 use crate::datasource::TableProvider;
 use crate::error::{ExecutionError, Result};
 use crate::execution::physical_plan::common;
+use crate::execution::physical_plan::csv::{CsvExec, CsvReadOptions};
 use crate::execution::physical_plan::datasource::DatasourceExec;
 use crate::execution::physical_plan::expressions::{
-    Alias, Avg, BinaryExpr, CastExpr, Column, Count, Literal, Max, Min, Sum,
+    Alias, Avg, BinaryExpr, CastExpr, Column, Count, Literal, Max, Min, PhysicalSortExpr,
+    Sum,
 };
 use crate::execution::physical_plan::hash_aggregate::HashAggregateExec;
 use crate::execution::physical_plan::limit::LimitExec;
 use crate::execution::physical_plan::math_expressions::register_math_functions;
+use crate::execution::physical_plan::memory::MemoryExec;
 use crate::execution::physical_plan::merge::MergeExec;
+use crate::execution::physical_plan::parquet::ParquetExec;
 use crate::execution::physical_plan::projection::ProjectionExec;
 use crate::execution::physical_plan::selection::SelectionExec;
+use crate::execution::physical_plan::sort::{SortExec, SortOptions};
 use crate::execution::physical_plan::udf::{ScalarFunction, ScalarFunctionExpr};
 use crate::execution::physical_plan::{AggregateExpr, ExecutionPlan, PhysicalExpr};
 use crate::execution::table_impl::TableImpl;
@@ -94,10 +99,16 @@ impl ExecutionContext {
                 ref name,
                 ref location,
                 ref file_type,
-                ref header_row,
+                ref has_header,
             } => match file_type {
                 FileType::CSV => {
-                    self.register_csv(name, location, schema, *header_row);
+                    self.register_csv(
+                        name,
+                        location,
+                        CsvReadOptions::new()
+                            .schema(&schema)
+                            .has_header(*has_header),
+                    )?;
                     Ok(vec![])
                 }
                 FileType::Parquet => {
@@ -120,7 +131,7 @@ impl ExecutionContext {
 
     /// Creates a logical plan
     pub fn create_logical_plan(&mut self, sql: &str) -> Result<LogicalPlan> {
-        let ast = DFParser::parse_sql(String::from(sql))?;
+        let ast = DFParser::parse_sql(sql)?;
 
         match ast {
             DFASTNode::ANSI(ansi) => {
@@ -141,17 +152,17 @@ impl ExecutionContext {
                 name,
                 columns,
                 file_type,
-                header_row,
+                has_header,
                 location,
             } => {
-                let schema = Arc::new(self.build_schema(columns)?);
+                let schema = Box::new(self.build_schema(columns)?);
 
                 Ok(LogicalPlan::CreateExternalTable {
                     schema,
                     name,
                     location,
                     file_type,
-                    header_row,
+                    has_header,
                 })
             }
         }
@@ -211,10 +222,10 @@ impl ExecutionContext {
         &mut self,
         name: &str,
         filename: &str,
-        schema: &Schema,
-        has_header: bool,
-    ) {
-        self.register_table(name, Box::new(CsvFile::new(filename, schema, has_header)));
+        options: CsvReadOptions,
+    ) -> Result<()> {
+        self.register_table(name, Box::new(CsvFile::try_new(filename, options)?));
+        Ok(())
     }
 
     /// Register a Parquet file as a table so that it can be queried from SQL
@@ -233,11 +244,12 @@ impl ExecutionContext {
     pub fn table(&mut self, table_name: &str) -> Result<Arc<dyn Table>> {
         match self.datasources.get(table_name) {
             Some(provider) => {
+                let schema = provider.schema().as_ref().clone();
                 let table_scan = LogicalPlan::TableScan {
                     schema_name: "".to_string(),
                     table_name: table_name.to_string(),
-                    table_schema: provider.schema().clone(),
-                    projected_schema: provider.schema().clone(),
+                    table_schema: Box::new(schema.to_owned()),
+                    projected_schema: Box::new(schema),
                     projection: None,
                 };
                 Ok(Arc::new(TableImpl::new(
@@ -259,6 +271,7 @@ impl ExecutionContext {
             Box::new(TypeCoercionRule::new(&self.scalar_functions)),
         ];
         let mut plan = plan.clone();
+
         for mut rule in rules {
             plan = rule.optimize(&plan)?;
         }
@@ -267,7 +280,7 @@ impl ExecutionContext {
 
     /// Create a physical plan from a logical plan
     pub fn create_physical_plan(
-        &mut self,
+        &self,
         logical_plan: &LogicalPlan,
         batch_size: usize,
     ) -> Result<Arc<dyn ExecutionPlan>> {
@@ -296,6 +309,39 @@ impl ExecutionContext {
                     table_name
                 ))),
             },
+            LogicalPlan::InMemoryScan {
+                data,
+                projection,
+                projected_schema,
+                ..
+            } => Ok(Arc::new(MemoryExec::try_new(
+                data,
+                Arc::new(projected_schema.as_ref().to_owned()),
+                projection.to_owned(),
+            )?)),
+            LogicalPlan::CsvScan {
+                path,
+                schema,
+                has_header,
+                delimiter,
+                projection,
+                ..
+            } => Ok(Arc::new(CsvExec::try_new(
+                path,
+                CsvReadOptions::new()
+                    .schema(schema.as_ref())
+                    .delimiter_option(*delimiter)
+                    .has_header(*has_header),
+                projection.to_owned(),
+                batch_size,
+            )?)),
+            LogicalPlan::ParquetScan {
+                path, projection, ..
+            } => Ok(Arc::new(ParquetExec::try_new(
+                path,
+                projection.to_owned(),
+                batch_size,
+            )?)),
             LogicalPlan::Projection { input, expr, .. } => {
                 let input = self.create_physical_plan(input, batch_size)?;
                 let input_schema = input.as_ref().schema().clone();
@@ -349,6 +395,33 @@ impl ExecutionContext {
                 let input_schema = input.as_ref().schema().clone();
                 let runtime_expr = self.create_physical_expr(expr, &input_schema)?;
                 Ok(Arc::new(SelectionExec::try_new(runtime_expr, input)?))
+            }
+            LogicalPlan::Sort { expr, input, .. } => {
+                let input = self.create_physical_plan(input, batch_size)?;
+                let input_schema = input.as_ref().schema().clone();
+
+                let sort_expr = expr
+                    .iter()
+                    .map(|e| match e {
+                        Expr::Sort {
+                            expr,
+                            asc,
+                            nulls_first,
+                        } => self.create_physical_sort_expr(
+                            expr,
+                            &input_schema,
+                            SortOptions {
+                                descending: !*asc,
+                                nulls_first: *nulls_first,
+                            },
+                        ),
+                        _ => Err(ExecutionError::ExecutionError(
+                            "Sort only accepts sort expressions".to_string(),
+                        )),
+                    })
+                    .collect::<Result<Vec<_>>>()?;
+
+                Ok(Arc::new(SortExec::try_new(sort_expr, input)?))
             }
             LogicalPlan::Limit { input, expr, .. } => {
                 let input = self.create_physical_plan(input, batch_size)?;
@@ -486,6 +559,19 @@ impl ExecutionContext {
         }
     }
 
+    /// Create an aggregate expression from a logical expression
+    pub fn create_physical_sort_expr(
+        &self,
+        e: &Expr,
+        input_schema: &Schema,
+        options: SortOptions,
+    ) -> Result<PhysicalSortExpr> {
+        Ok(PhysicalSortExpr {
+            expr: self.create_physical_expr(e, input_schema)?,
+            options: options,
+        })
+    }
+
     /// Execute a physical plan and collect the results in memory
     pub fn collect(&self, plan: &dyn ExecutionPlan) -> Result<Vec<RecordBatch>> {
         let partitions = plan.partitions()?;
@@ -590,6 +676,7 @@ mod tests {
     use std::fs::File;
     use std::io::prelude::*;
     use tempdir::TempDir;
+    use test::*;
 
     #[test]
     fn parallel_projection() -> Result<()> {
@@ -627,6 +714,146 @@ mod tests {
 
         let row_count: usize = results.iter().map(|batch| batch.num_rows()).sum();
         assert_eq!(row_count, 20);
+
+        Ok(())
+    }
+
+    #[test]
+    fn projection_on_table_scan() -> Result<()> {
+        let tmp_dir = TempDir::new("projection_on_table_scan")?;
+        let partition_count = 4;
+        let mut ctx = create_ctx(&tmp_dir, partition_count)?;
+
+        let table = ctx.table("test")?;
+        let logical_plan = LogicalPlanBuilder::from(&table.to_logical_plan())
+            .project(vec![Expr::UnresolvedColumn("c2".to_string())])?
+            .build()?;
+
+        let optimized_plan = ctx.optimize(&logical_plan)?;
+        match &optimized_plan {
+            LogicalPlan::Projection { input, .. } => match &**input {
+                LogicalPlan::TableScan {
+                    table_schema,
+                    projected_schema,
+                    ..
+                } => {
+                    assert_eq!(table_schema.fields().len(), 2);
+                    assert_eq!(projected_schema.fields().len(), 1);
+                }
+                _ => assert!(false, "input to projection should be TableScan"),
+            },
+            _ => assert!(false, "expect optimized_plan to be projection"),
+        }
+
+        let expected = "Projection: #0\
+        \n  TableScan: test projection=Some([1])";
+        assert_eq!(format!("{:?}", optimized_plan), expected);
+
+        let physical_plan = ctx.create_physical_plan(&optimized_plan, 1024)?;
+
+        assert_eq!(1, physical_plan.schema().fields().len());
+        assert_eq!("c2", physical_plan.schema().field(0).name().as_str());
+
+        let batches = ctx.collect(physical_plan.as_ref())?;
+        assert_eq!(4, batches.len());
+        assert_eq!(1, batches[0].num_columns());
+        assert_eq!(10, batches[0].num_rows());
+
+        Ok(())
+    }
+
+    #[test]
+    fn preserve_nullability_on_projection() -> Result<()> {
+        let tmp_dir = TempDir::new("execute")?;
+        let ctx = create_ctx(&tmp_dir, 1)?;
+
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "state",
+            DataType::Utf8,
+            false,
+        )]));
+
+        let plan = LogicalPlanBuilder::scan("default", "test", schema.as_ref(), None)?
+            .project(vec![col("state")])?
+            .build()?;
+
+        let plan = ctx.optimize(&plan)?;
+        let physical_plan = ctx.create_physical_plan(&Arc::new(plan), 1024)?;
+        assert_eq!(physical_plan.schema().field(0).is_nullable(), false);
+        Ok(())
+    }
+
+    #[test]
+    fn projection_on_memory_scan() -> Result<()> {
+        let schema = Schema::new(vec![
+            Field::new("a", DataType::Int32, false),
+            Field::new("b", DataType::Int32, false),
+            Field::new("c", DataType::Int32, false),
+        ]);
+        let plan = LogicalPlanBuilder::from(&LogicalPlan::InMemoryScan {
+            data: vec![vec![RecordBatch::try_new(
+                Arc::new(schema.clone()),
+                vec![
+                    Arc::new(Int32Array::from(vec![1, 10, 10, 100])),
+                    Arc::new(Int32Array::from(vec![2, 12, 12, 120])),
+                    Arc::new(Int32Array::from(vec![3, 12, 12, 120])),
+                ],
+            )?]],
+            schema: Box::new(schema.clone()),
+            projection: None,
+            projected_schema: Box::new(schema.clone()),
+        })
+        .project(vec![Expr::UnresolvedColumn("b".to_string())])?
+        .build()?;
+        assert_fields_eq(&plan, vec!["b"]);
+
+        let ctx = ExecutionContext::new();
+        let optimized_plan = ctx.optimize(&plan)?;
+        match &optimized_plan {
+            LogicalPlan::Projection { input, .. } => match &**input {
+                LogicalPlan::InMemoryScan {
+                    schema,
+                    projected_schema,
+                    ..
+                } => {
+                    assert_eq!(schema.fields().len(), 3);
+                    assert_eq!(projected_schema.fields().len(), 1);
+                }
+                _ => assert!(false, "input to projection should be InMemoryScan"),
+            },
+            _ => assert!(false, "expect optimized_plan to be projection"),
+        }
+
+        let expected = "Projection: #0\
+        \n  InMemoryScan: projection=Some([1])";
+        assert_eq!(format!("{:?}", optimized_plan), expected);
+
+        let physical_plan = ctx.create_physical_plan(&optimized_plan, 1024)?;
+
+        assert_eq!(1, physical_plan.schema().fields().len());
+        assert_eq!("b", physical_plan.schema().field(0).name().as_str());
+
+        let batches = ctx.collect(physical_plan.as_ref())?;
+        assert_eq!(1, batches.len());
+        assert_eq!(1, batches[0].num_columns());
+        assert_eq!(4, batches[0].num_rows());
+
+        Ok(())
+    }
+
+    #[test]
+    fn sort() -> Result<()> {
+        let results = execute("SELECT c1, c2 FROM test ORDER BY c1 DESC, c2 ASC", 4)?;
+        assert_eq!(results.len(), 1);
+
+        let batch = &results[0];
+        let expected: Vec<&str> = vec![
+            "3,1", "3,2", "3,3", "3,4", "3,5", "3,6", "3,7", "3,8", "3,9", "3,10", "2,1",
+            "2,2", "2,3", "2,4", "2,5", "2,6", "2,7", "2,8", "2,9", "2,10", "1,1", "1,2",
+            "1,3", "1,4", "1,5", "1,6", "1,7", "1,8", "1,9", "1,10", "0,1", "0,2", "0,3",
+            "0,4", "0,5", "0,6", "0,7", "0,8", "0,9", "0,10",
+        ];
+        assert_eq!(test::format_batch(batch), expected);
 
         Ok(())
     }
@@ -785,7 +1012,7 @@ mod tests {
     #[test]
     fn aggregate_with_alias() -> Result<()> {
         let tmp_dir = TempDir::new("execute")?;
-        let mut ctx = create_ctx(&tmp_dir, 1)?;
+        let ctx = create_ctx(&tmp_dir, 1)?;
 
         let schema = Arc::new(Schema::new(vec![
             Field::new("state", DataType::Utf8, false),
@@ -830,11 +1057,12 @@ mod tests {
         ]));
 
         // register each partition as well as the top level dir
-        ctx.register_csv("part0", &format!("{}/part-0.csv", out_dir), &schema, true);
-        ctx.register_csv("part1", &format!("{}/part-1.csv", out_dir), &schema, true);
-        ctx.register_csv("part2", &format!("{}/part-2.csv", out_dir), &schema, true);
-        ctx.register_csv("part3", &format!("{}/part-3.csv", out_dir), &schema, true);
-        ctx.register_csv("allparts", &out_dir, &schema, true);
+        let csv_read_option = CsvReadOptions::new().schema(&schema);
+        ctx.register_csv("part0", &format!("{}/part-0.csv", out_dir), csv_read_option)?;
+        ctx.register_csv("part1", &format!("{}/part-1.csv", out_dir), csv_read_option)?;
+        ctx.register_csv("part2", &format!("{}/part-2.csv", out_dir), csv_read_option)?;
+        ctx.register_csv("part3", &format!("{}/part-3.csv", out_dir), csv_read_option)?;
+        ctx.register_csv("allparts", &out_dir, csv_read_option)?;
 
         let part0 = collect(&mut ctx, "SELECT c1, c2 FROM part0")?;
         let part1 = collect(&mut ctx, "SELECT c1, c2 FROM part1")?;
@@ -859,13 +1087,13 @@ mod tests {
 
     #[test]
     fn scalar_udf() -> Result<()> {
-        let schema = Arc::new(Schema::new(vec![
+        let schema = Schema::new(vec![
             Field::new("a", DataType::Int32, false),
             Field::new("b", DataType::Int32, false),
-        ]));
+        ]);
 
         let batch = RecordBatch::try_new(
-            schema.clone(),
+            Arc::new(schema.clone()),
             vec![
                 Arc::new(Int32Array::from(vec![1, 10, 10, 100])),
                 Arc::new(Int32Array::from(vec![2, 12, 12, 120])),
@@ -874,10 +1102,10 @@ mod tests {
 
         let mut ctx = ExecutionContext::new();
 
-        let provider = MemTable::new(schema, vec![batch])?;
+        let provider = MemTable::new(Arc::new(schema), vec![vec![batch]])?;
         ctx.register_table("t", Box::new(provider));
 
-        let myfunc: ScalarUdf = |args: &Vec<ArrayRef>| {
+        let myfunc: ScalarUdf = |args: &[ArrayRef]| {
             let l = &args[0]
                 .as_any()
                 .downcast_ref::<Int32Array>()
@@ -997,7 +1225,11 @@ mod tests {
         }
 
         // register csv file with the execution context
-        ctx.register_csv("test", tmp_dir.path().to_str().unwrap(), &schema, true);
+        ctx.register_csv(
+            "test",
+            tmp_dir.path().to_str().unwrap(),
+            CsvReadOptions::new().schema(&schema),
+        )?;
 
         Ok(ctx)
     }

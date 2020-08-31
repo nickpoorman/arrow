@@ -65,7 +65,9 @@ RUN apt-get update -y -q && \
         libsnappy-dev \
         libssl-dev \
         libthrift-dev \
+        libutf8proc-dev \
         libzstd-dev \
+        make \
         ninja-build \
         pkg-config \
         protobuf-compiler \
@@ -104,6 +106,7 @@ ENV ARROW_BUILD_TESTS=ON \
     ARROW_WITH_ZSTD=ON \
     GTest_SOURCE=BUNDLED \
     ORC_SOURCE=BUNDLED \
-    PARQUET_BUILD_EXECUTABLES=ON \
     PARQUET_BUILD_EXAMPLES=ON \
-    PATH=/usr/lib/ccache/:$PATH
+    PARQUET_BUILD_EXECUTABLES=ON \
+    PATH=/usr/lib/ccache/:$PATH \
+    PYTHON=python3

@@ -26,7 +26,7 @@ use crate::error::Result;
 use crate::execution::physical_plan::{
     BatchIterator, ExecutionPlan, Partition, PhysicalExpr,
 };
-use arrow::datatypes::{Field, Schema};
+use arrow::datatypes::Schema;
 use arrow::record_batch::RecordBatch;
 
 /// Execution plan for a projection
@@ -49,7 +49,7 @@ impl ProjectionExec {
 
         let fields: Result<Vec<_>> = expr
             .iter()
-            .map(|e| Ok(Field::new(&e.name(), e.data_type(&input_schema)?, true)))
+            .map(|e| e.to_schema_field(&input_schema))
             .collect();
 
         let schema = Arc::new(Schema::new(fields?));
@@ -75,10 +75,9 @@ impl ExecutionPlan for ProjectionExec {
             .partitions()?
             .iter()
             .map(|p| {
-                let expr = self.expr.clone();
                 let projection: Arc<dyn Partition> = Arc::new(ProjectionPartition {
                     schema: self.schema.clone(),
-                    expr,
+                    expr: self.expr.clone(),
                     input: p.clone() as Arc<dyn Partition>,
                 });
 
@@ -139,7 +138,7 @@ impl BatchIterator for ProjectionIterator {
 mod tests {
 
     use super::*;
-    use crate::execution::physical_plan::csv::CsvExec;
+    use crate::execution::physical_plan::csv::{CsvExec, CsvReadOptions};
     use crate::execution::physical_plan::expressions::Column;
     use crate::test;
 
@@ -150,7 +149,8 @@ mod tests {
         let partitions = 4;
         let path = test::create_partitioned_csv("aggregate_test_100.csv", partitions)?;
 
-        let csv = CsvExec::try_new(&path, schema.clone(), true, None, 1024)?;
+        let csv =
+            CsvExec::try_new(&path, CsvReadOptions::new().schema(&schema), None, 1024)?;
 
         let projection = ProjectionExec::try_new(
             vec![Arc::new(Column::new(0, &schema.as_ref().field(0).name()))],

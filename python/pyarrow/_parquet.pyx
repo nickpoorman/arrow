@@ -38,12 +38,12 @@ from pyarrow.lib cimport (Buffer, Array, Schema,
                           pyarrow_wrap_buffer,
                           NativeFile, get_reader, get_writer)
 
-from pyarrow.compat import tobytes, frombytes
 from pyarrow.lib import (ArrowException, NativeFile, _stringify_path,
                          BufferOutputStream,
                          _datetime_conversion_functions,
                          _box_time_milli,
-                         _box_time_micro)
+                         _box_time_micro,
+                         tobytes, frombytes)
 
 cimport cpython as cp
 
@@ -1088,8 +1088,7 @@ cdef class ParquetReader:
             vector[int] c_row_groups
             vector[int] c_column_indices
 
-        if use_threads:
-            self.set_use_threads(use_threads)
+        self.set_use_threads(use_threads)
 
         for row_group in row_groups:
             c_row_groups.push_back(row_group)
@@ -1114,8 +1113,7 @@ cdef class ParquetReader:
             shared_ptr[CTable] ctable
             vector[int] c_column_indices
 
-        if use_threads:
-            self.set_use_threads(use_threads)
+        self.set_use_threads(use_threads)
 
         if column_indices is not None:
             for index in column_indices:
@@ -1207,6 +1205,7 @@ cdef class ParquetWriter:
         object allow_truncated_timestamps
         object compression
         object compression_level
+        object data_page_version
         object version
         object write_statistics
         object writer_engine_version
@@ -1223,7 +1222,8 @@ cdef class ParquetWriter:
                   allow_truncated_timestamps=False,
                   compression_level=None,
                   use_byte_stream_split=False,
-                  writer_engine_version=None):
+                  writer_engine_version=None,
+                  data_page_version=None):
         cdef:
             shared_ptr[WriterProperties] properties
             c_string c_where
@@ -1250,8 +1250,10 @@ cdef class ParquetWriter:
         self.allow_truncated_timestamps = allow_truncated_timestamps
         self.use_byte_stream_split = use_byte_stream_split
         self.writer_engine_version = writer_engine_version
+        self.data_page_version = data_page_version
 
         cdef WriterProperties.Builder properties_builder
+        self._set_data_page_version(&properties_builder)
         self._set_version(&properties_builder)
         self._set_compression_props(&properties_builder)
         self._set_dictionary_props(&properties_builder)
@@ -1323,6 +1325,17 @@ cdef class ParquetWriter:
             else:
                 raise ValueError("Unsupported Parquet format version: {0}"
                                  .format(self.version))
+
+    cdef int _set_data_page_version(self, WriterProperties.Builder* props) \
+            except -1:
+        if self.data_page_version is not None:
+            if self.data_page_version == "1.0":
+                props.data_page_version(ParquetDataPageVersion_V1)
+            elif self.data_page_version == "2.0":
+                props.data_page_version(ParquetDataPageVersion_V2)
+            else:
+                raise ValueError("Unsupported Parquet data page version: {0}"
+                                 .format(self.data_page_version))
 
     cdef void _set_compression_props(self, WriterProperties.Builder* props) \
             except *:

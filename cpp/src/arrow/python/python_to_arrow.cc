@@ -30,8 +30,8 @@
 
 #include "arrow/array.h"
 #include "arrow/builder.h"
+#include "arrow/chunked_array.h"
 #include "arrow/status.h"
-#include "arrow/table.h"
 #include "arrow/type.h"
 #include "arrow/type_traits.h"
 #include "arrow/util/checked_cast.h"
@@ -922,7 +922,7 @@ class StructConverter
     auto struct_type = checked_pointer_cast<StructType>(builder->type());
 
     num_fields_ = this->typed_builder_->num_fields();
-    DCHECK_EQ(num_fields_, struct_type->num_children());
+    DCHECK_EQ(num_fields_, struct_type->num_fields());
 
     field_name_bytes_list_.reset(PyList_New(num_fields_));
     field_name_unicode_list_.reset(PyList_New(num_fields_));
@@ -930,8 +930,8 @@ class StructConverter
 
     // Initialize the child converters and field names
     for (int i = 0; i < num_fields_; i++) {
-      const std::string& field_name(struct_type->child(i)->name());
-      std::shared_ptr<DataType> field_type(struct_type->child(i)->type());
+      const std::string& field_name(struct_type->field(i)->name());
+      std::shared_ptr<DataType> field_type(struct_type->field(i)->type());
 
       std::unique_ptr<SeqConverter> value_converter;
       RETURN_NOT_OK(
@@ -1171,6 +1171,12 @@ Status GetConverterFlat(const std::shared_ptr<DataType>& type, bool strict_conve
 
 Status GetConverter(const std::shared_ptr<DataType>& type, bool from_pandas,
                     bool strict_conversions, std::unique_ptr<SeqConverter>* out) {
+  if (from_pandas) {
+    // ARROW-842: If pandas is not installed then null checks will be less
+    // comprehensive, but that is okay.
+    internal::InitPandasStaticData();
+  }
+
   switch (type->id()) {
     case Type::LIST:
       if (from_pandas) {

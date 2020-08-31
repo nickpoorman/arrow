@@ -25,6 +25,7 @@
 #include "arrow/dataset/filter.h"
 #include "arrow/dataset/test_util.h"
 #include "arrow/record_batch.h"
+#include "arrow/table.h"
 #include "arrow/testing/gtest_util.h"
 #include "arrow/testing/util.h"
 #include "arrow/type.h"
@@ -183,18 +184,16 @@ class TestParquetFileFormat : public ArrowParquetWriterMixin {
                                 std::vector<int> expected_row_groups,
                                 const Expression& filter) {
     auto parquet_fragment = checked_pointer_cast<ParquetFileFragment>(fragment);
-    ASSERT_OK_AND_ASSIGN(auto row_group_fragments,
-                         format_->GetRowGroupFragments(*parquet_fragment, filter.Copy()));
+    ASSERT_OK_AND_ASSIGN(auto fragments, parquet_fragment->SplitByRowGroup(filter.Copy()))
 
-    auto expected_row_group = expected_row_groups.begin();
-    for (auto maybe_fragment : row_group_fragments) {
-      ASSERT_OK_AND_ASSIGN(auto fragment, std::move(maybe_fragment));
-      auto parquet_fragment = checked_pointer_cast<ParquetFileFragment>(fragment);
+    EXPECT_EQ(fragments.size(), expected_row_groups.size());
+    for (size_t i = 0; i < fragments.size(); i++) {
+      auto expected = expected_row_groups[i];
+      auto parquet_fragment = checked_pointer_cast<ParquetFileFragment>(fragments[i]);
 
-      auto i = *expected_row_group++;
-      EXPECT_EQ(parquet_fragment->row_groups(), std::vector<int>{i});
-
-      EXPECT_EQ(SingleBatch(parquet_fragment.get())->num_rows(), i + 1);
+      EXPECT_EQ(parquet_fragment->row_groups(),
+                RowGroupInfo::FromIdentifiers({expected}));
+      EXPECT_EQ(SingleBatch(parquet_fragment.get())->num_rows(), expected + 1);
     }
   }
 
@@ -434,7 +433,6 @@ TEST_F(TestParquetFileFormat, PredicatePushdown) {
 
 TEST_F(TestParquetFileFormat, PredicatePushdownRowGroupFragments) {
   constexpr int64_t kNumRowGroups = 16;
-  constexpr int64_t kTotalNumRows = kNumRowGroups * (kNumRowGroups + 1) / 2;
 
   auto reader = ArithmeticDatasetFixture::GetRecordBatchReader(kNumRowGroups);
   auto source = GetFileSource(reader.get());
@@ -442,8 +440,9 @@ TEST_F(TestParquetFileFormat, PredicatePushdownRowGroupFragments) {
   opts_ = ScanOptions::Make(reader->schema());
   ASSERT_OK_AND_ASSIGN(auto fragment, format_->MakeFragment(*source));
 
-  CountRowGroupsInFragment(fragment, internal::Iota(static_cast<int>(kTotalNumRows)),
-                           *scalar(true));
+  auto all_row_groups = internal::Iota(static_cast<int>(kNumRowGroups));
+  CountRowGroupsInFragment(fragment, all_row_groups, *scalar(true));
+  CountRowGroupsInFragment(fragment, all_row_groups, "not here"_ == 0);
 
   for (int i = 0; i < kNumRowGroups; ++i) {
     CountRowGroupsInFragment(fragment, {i}, "i64"_ == int64_t(i + 1));
@@ -461,13 +460,35 @@ TEST_F(TestParquetFileFormat, PredicatePushdownRowGroupFragments) {
   CountRowGroupsInFragment(fragment, {1, 3},
                            "i64"_ == int64_t(2) or "i64"_ == int64_t(4));
 
+  // TODO(bkietz): better Assume support for InExpression
+  // auto set = ArrayFromJSON(int64(), "[2, 4]");
+  // CountRowGroupsInFragment(fragment, {1, 3}, "i64"_.In(set));
+
   CountRowGroupsInFragment(fragment, {0, 1, 2, 3, 4}, "i64"_ < int64_t(6));
 
   CountRowGroupsInFragment(fragment, internal::Iota(5, static_cast<int>(kNumRowGroups)),
                            "i64"_ >= int64_t(6));
 
-  CountRowGroupsInFragment(fragment, {5, 6, 7},
+  CountRowGroupsInFragment(fragment, {5, 6},
                            "i64"_ >= int64_t(6) and "i64"_ < int64_t(8));
+}
+
+TEST_F(TestParquetFileFormat, PredicatePushdownRowGroupFragmentsUsingStringColumn) {
+  auto table =
+      TableFromJSON(schema({field("x", utf8())}), {
+                                                      R"([{"x": "a"}, {"x": "a"}])",
+                                                      R"([{"x": "b"}, {"x": "b"}])",
+                                                      R"([{"x": "c"}, {"x": "c"}])",
+                                                      R"([{"x": "a"}, {"x": "b"}])",
+                                                  });
+  TableBatchReader reader(*table);
+  auto source = GetFileSource(&reader);
+
+  opts_ = ScanOptions::Make(reader.schema());
+  ASSERT_OK_AND_ASSIGN(auto fragment, format_->MakeFragment(*source));
+
+  // TODO(bkietz): support strings in StatisticsAsScalars
+  // CountRowGroupsInFragment(fragment, {0, 3}, "x"_ == "a");
 }
 
 TEST_F(TestParquetFileFormat, ExplicitRowGroupSelection) {
@@ -480,8 +501,11 @@ TEST_F(TestParquetFileFormat, ExplicitRowGroupSelection) {
   opts_ = ScanOptions::Make(reader->schema());
 
   auto row_groups_fragment = [&](std::vector<int> row_groups) {
+    std::shared_ptr<Schema> physical_schema = nullptr;
     EXPECT_OK_AND_ASSIGN(auto fragment,
-                         format_->MakeFragment(*source, scalar(true), row_groups));
+                         format_->MakeFragment(*source, scalar(true),
+                                               RowGroupInfo::FromIdentifiers(row_groups),
+                                               physical_schema));
     return internal::checked_pointer_cast<ParquetFileFragment>(fragment);
   };
 
@@ -492,7 +516,7 @@ TEST_F(TestParquetFileFormat, ExplicitRowGroupSelection) {
   // individual selection selects a single row group
   for (int i = 0; i < kNumRowGroups; ++i) {
     CountRowsAndBatchesInScan(row_groups_fragment({i}), i + 1, 1);
-    EXPECT_EQ(row_groups_fragment({i})->row_groups(), std::vector<int>{i});
+    EXPECT_EQ(row_groups_fragment({i})->row_groups(), RowGroupInfo::FromIdentifiers({i}));
   }
 
   for (int i = 0; i < kNumRowGroups; ++i) {

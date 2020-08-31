@@ -49,9 +49,9 @@
 #include "parquet/thrift_internal.h"
 #include "parquet/types.h"
 
+using arrow::Datum;
 using arrow::Status;
 using arrow::BitUtil::BitWriter;
-using arrow::compute::Datum;
 using arrow::internal::checked_cast;
 using arrow::util::RleEncoder;
 
@@ -729,24 +729,24 @@ void ColumnWriterImpl::AddDataPage() {
   int64_t repetition_levels_rle_size = 0;
 
   std::shared_ptr<Buffer> values = GetValuesBuffer();
-  bool is_v1 = properties_->version() == ParquetVersion::PARQUET_1_0;
+  bool is_v1_data_page = properties_->data_page_version() == ParquetDataPageVersion::V1;
 
   if (descr_->max_definition_level() > 0) {
-    definition_levels_rle_size =
-        RleEncodeLevels(definition_levels_sink_.data(), definition_levels_rle_.get(),
-                        descr_->max_definition_level(), /*include_length_prefix=*/is_v1);
+    definition_levels_rle_size = RleEncodeLevels(
+        definition_levels_sink_.data(), definition_levels_rle_.get(),
+        descr_->max_definition_level(), /*include_length_prefix=*/is_v1_data_page);
   }
 
   if (descr_->max_repetition_level() > 0) {
-    repetition_levels_rle_size =
-        RleEncodeLevels(repetition_levels_sink_.data(), repetition_levels_rle_.get(),
-                        descr_->max_repetition_level(), /*include_length_prefix=*/is_v1);
+    repetition_levels_rle_size = RleEncodeLevels(
+        repetition_levels_sink_.data(), repetition_levels_rle_.get(),
+        descr_->max_repetition_level(), /*include_length_prefix=*/is_v1_data_page);
   }
 
   int64_t uncompressed_size =
       definition_levels_rle_size + repetition_levels_rle_size + values->size();
 
-  if (is_v1) {
+  if (is_v1_data_page) {
     BuildDataPageV1(definition_levels_rle_size, repetition_levels_rle_size,
                     uncompressed_size, values);
   } else {
@@ -923,10 +923,10 @@ Status ConvertDictionaryToDense(const ::arrow::Array& array, MemoryPool* pool,
     return Status::OK();
   }
 
-  ::arrow::compute::FunctionContext ctx(pool);
-  Datum cast_output;
-  RETURN_NOT_OK(::arrow::compute::Cast(&ctx, Datum(array.data()), dict_type.value_type(),
-                                       ::arrow::compute::CastOptions(), &cast_output));
+  ::arrow::compute::ExecContext ctx(pool);
+  ARROW_ASSIGN_OR_RAISE(Datum cast_output,
+                        ::arrow::compute::Cast(array.data(), dict_type.value_type(),
+                                               ::arrow::compute::CastOptions(), &ctx));
   *out = cast_output.make_array();
   return Status::OK();
 }

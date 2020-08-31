@@ -28,7 +28,8 @@ func (t *BooleanType) Name() string   { return "bool" }
 func (t *BooleanType) String() string { return "bool" }
 
 // BitWidth returns the number of bits required to store a single element of this data type in memory.
-func (t *BooleanType) BitWidth() int { return 1 }
+func (t *BooleanType) BitWidth() int                    { return 1 }
+func (t *BooleanType) BuildScalar(v interface{}) Scalar { return NewBooleanScalarInterface(v, t) }
 
 type FixedSizeBinaryType struct {
 	ByteWidth int
@@ -40,6 +41,9 @@ func (t *FixedSizeBinaryType) BitWidth() int { return 8 * t.ByteWidth }
 
 func (t *FixedSizeBinaryType) String() string {
 	return "fixed_size_binary[" + strconv.Itoa(t.ByteWidth) + "]"
+}
+func (t *FixedSizeBinaryType) BuildScalar(v interface{}) Scalar {
+	return NewFixedSizeBinaryScalarInterface(v, t)
 }
 
 type (
@@ -81,27 +85,30 @@ func (t *TimestampType) String() string {
 }
 
 // BitWidth returns the number of bits required to store a single element of this data type in memory.
-func (*TimestampType) BitWidth() int { return 64 }
+func (*TimestampType) BitWidth() int                      { return 64 }
+func (t *TimestampType) BuildScalar(v interface{}) Scalar { return NewTimestampScalarInterface(v, t) }
 
 // Time32Type is encoded as a 32-bit signed integer, representing either seconds or milliseconds since midnight.
 type Time32Type struct {
 	Unit TimeUnit
 }
 
-func (*Time32Type) ID() Type         { return TIME32 }
-func (*Time32Type) Name() string     { return "time32" }
-func (*Time32Type) BitWidth() int    { return 32 }
-func (t *Time32Type) String() string { return "time32[" + t.Unit.String() + "]" }
+func (*Time32Type) ID() Type                           { return TIME32 }
+func (*Time32Type) Name() string                       { return "time32" }
+func (*Time32Type) BitWidth() int                      { return 32 }
+func (t *Time32Type) String() string                   { return "time32[" + t.Unit.String() + "]" }
+func (t *Time32Type) BuildScalar(v interface{}) Scalar { return NewTime32ScalarInterface(v, t) }
 
 // Time64Type is encoded as a 64-bit signed integer, representing either microseconds or nanoseconds since midnight.
 type Time64Type struct {
 	Unit TimeUnit
 }
 
-func (*Time64Type) ID() Type         { return TIME64 }
-func (*Time64Type) Name() string     { return "time64" }
-func (*Time64Type) BitWidth() int    { return 64 }
-func (t *Time64Type) String() string { return "time64[" + t.Unit.String() + "]" }
+func (*Time64Type) ID() Type                           { return TIME64 }
+func (*Time64Type) Name() string                       { return "time64" }
+func (*Time64Type) BitWidth() int                      { return 64 }
+func (t *Time64Type) String() string                   { return "time64[" + t.Unit.String() + "]" }
+func (t *Time64Type) BuildScalar(v interface{}) Scalar { return NewTime64ScalarInterface(v, t) }
 
 // DurationType is encoded as a 64-bit signed integer, representing an amount
 // of elapsed time without any relation to a calendar artifact.
@@ -109,10 +116,11 @@ type DurationType struct {
 	Unit TimeUnit
 }
 
-func (*DurationType) ID() Type         { return DURATION }
-func (*DurationType) Name() string     { return "duration" }
-func (*DurationType) BitWidth() int    { return 64 }
-func (t *DurationType) String() string { return "duration[" + t.Unit.String() + "]" }
+func (*DurationType) ID() Type                           { return DURATION }
+func (*DurationType) Name() string                       { return "duration" }
+func (*DurationType) BitWidth() int                      { return 64 }
+func (t *DurationType) String() string                   { return "duration[" + t.Unit.String() + "]" }
+func (t *DurationType) BuildScalar(v interface{}) Scalar { return NewDurationScalarInterface(v, t) }
 
 // Float16Type represents a floating point value encoded with a 16-bit precision.
 type Float16Type struct{}
@@ -122,7 +130,8 @@ func (t *Float16Type) Name() string   { return "float16" }
 func (t *Float16Type) String() string { return "float16" }
 
 // BitWidth returns the number of bits required to store a single element of this data type in memory.
-func (t *Float16Type) BitWidth() int { return 16 }
+func (t *Float16Type) BitWidth() int                    { return 16 }
+func (t *Float16Type) BuildScalar(v interface{}) Scalar { return NewFloat16ScalarInterface(v, t) }
 
 // Decimal128Type represents a fixed-size 128-bit decimal type.
 type Decimal128Type struct {
@@ -136,6 +145,7 @@ func (*Decimal128Type) BitWidth() int { return 16 }
 func (t *Decimal128Type) String() string {
 	return fmt.Sprintf("%s(%d, %d)", t.Name(), t.Precision, t.Scale)
 }
+func (t *Decimal128Type) BuildScalar(v interface{}) Scalar { return NewDecimal128ScalarInterface(v, t) }
 
 // MonthInterval represents a number of months.
 type MonthInterval int32
@@ -150,6 +160,9 @@ func (*MonthIntervalType) String() string { return "month_interval" }
 
 // BitWidth returns the number of bits required to store a single element of this data type in memory.
 func (t *MonthIntervalType) BitWidth() int { return 32 }
+func (t *MonthIntervalType) BuildScalar(v interface{}) Scalar {
+	return NewMonthIntervalScalarInterface(v, t)
+}
 
 // DayTimeInterval represents a number of days and milliseconds (fraction of day).
 type DayTimeInterval struct {
@@ -164,6 +177,9 @@ type DayTimeIntervalType struct{}
 func (*DayTimeIntervalType) ID() Type       { return INTERVAL }
 func (*DayTimeIntervalType) Name() string   { return "day_time_interval" }
 func (*DayTimeIntervalType) String() string { return "day_time_interval" }
+func (t *DayTimeIntervalType) BuildScalar(v interface{}) Scalar {
+	return NewDayTimeIntervalScalarInterface(v, t)
+}
 
 // BitWidth returns the number of bits required to store a single element of this data type in memory.
 func (t *DayTimeIntervalType) BitWidth() int { return 64 }

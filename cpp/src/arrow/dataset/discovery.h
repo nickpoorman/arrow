@@ -19,6 +19,8 @@
 /// dataset with possible partitioning according to available
 /// partitioning
 
+// This API is EXPERIMENTAL.
+
 #pragma once
 
 #include <memory>
@@ -231,9 +233,6 @@ class ARROW_DS_EXPORT FileSystemDatasetFactory : public DatasetFactory {
   std::shared_ptr<fs::FileSystem> fs_;
   std::shared_ptr<FileFormat> format_;
   FileSystemFactoryOptions options_;
-
- private:
-  util::optional<util::string_view> RemovePartitionBaseDir(util::string_view path);
 };
 
 }  // namespace dataset

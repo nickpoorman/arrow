@@ -43,6 +43,14 @@ func (decimal128Traits) PutValue(b []byte, v decimal128.Num) {
 	binary.LittleEndian.PutUint64(b[8:], uint64(v.HighBits()))
 }
 
+// GetValue returns a single decimal128.Num from the slice of bytes b.
+func (decimal128Traits) GetValue(b []byte) decimal128.Num {
+	return decimal128.New(
+		int64(binary.LittleEndian.Uint64(b[8:])),
+		binary.LittleEndian.Uint64(b[:8]),
+	)
+}
+
 // CastFromBytes reinterprets the slice b to a slice of type uint16.
 //
 // NOTE: len(b) must be a multiple of Uint16SizeBytes.

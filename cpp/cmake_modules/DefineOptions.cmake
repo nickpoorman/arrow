@@ -95,9 +95,6 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
   define_option(ARROW_USE_PRECOMPILED_HEADERS "Use precompiled headers when compiling"
                 OFF)
 
-  # Disable this option to exercise non-SIMD fallbacks
-  define_option(ARROW_USE_SIMD "Build with SIMD optimizations" ON)
-
   define_option_string(ARROW_SIMD_LEVEL
                        "SIMD compiler optimization level"
                        "SSE4_2" # default to SSE4.2
@@ -280,11 +277,15 @@ if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_CURRENT_SOURCE_DIR}")
 
   define_option(ARROW_BOOST_USE_SHARED "Rely on boost shared libraries where relevant" ON)
 
+  define_option(ARROW_GFLAGS_USE_SHARED "Rely on GFlags shared libraries where relevant"
+                ON)
+
+  define_option(ARROW_GRPC_USE_SHARED "Rely on gRPC shared libraries where relevant" ON)
+
   define_option(ARROW_PROTOBUF_USE_SHARED
                 "Rely on Protocol Buffers shared libraries where relevant" ON)
 
-  define_option(ARROW_GFLAGS_USE_SHARED "Rely on GFlags shared libraries where relevant"
-                ON)
+  define_option(ARROW_ZSTD_USE_SHARED "Rely on zstd shared libraries where relevant" ON)
 
   define_option(ARROW_WITH_BACKTRACE "Build with backtrace support" ON)
 

@@ -30,9 +30,10 @@ type testDataType struct {
 	id arrow.Type
 }
 
-func (d *testDataType) ID() arrow.Type { return d.id }
-func (d *testDataType) Name() string   { panic("implement me") }
-func (d *testDataType) BitWidth() int  { return 8 }
+func (d *testDataType) ID() arrow.Type                         { return d.id }
+func (d *testDataType) Name() string                           { panic("implement me") }
+func (d *testDataType) BitWidth() int                          { return 8 }
+func (d *testDataType) BuildScalar(v interface{}) arrow.Scalar { panic("not implemented") }
 
 func TestMakeFromData(t *testing.T) {
 	tests := []struct {

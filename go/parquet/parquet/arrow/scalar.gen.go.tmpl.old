@@ -1,0 +1,23 @@
+package arrow
+
+// Base class for scalar values, representing a single value occupying
+// an array "slot"
+//type Scalar interface {
+//}
+
+type EqualityComparable interface {
+	Equals() bool
+    NotEquals() bool
+}
+
+{{range .In}}
+type Scalar{{.Name}}
+
+func (s Scalar{{.Name}}) Equals() bool {
+    return false
+}
+
+func (s Scalar{{.Name}}) NotEquals() bool {
+    return false
+}
+{{- end}}

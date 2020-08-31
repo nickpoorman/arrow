@@ -20,16 +20,20 @@
 # cython: embedsignature = True
 # cython: language_level = 3
 
+from cython.operator cimport dereference as deref
+
+import codecs
+from collections.abc import Mapping
 
 from pyarrow.includes.common cimport *
 from pyarrow.includes.libarrow cimport *
 from pyarrow.lib cimport (check_status, Field, MemoryPool, Schema,
                           _CRecordBatchReader, ensure_type,
                           maybe_unbox_memory_pool, get_input_stream,
+                          native_transcoding_input_stream,
                           pyarrow_wrap_schema, pyarrow_wrap_table,
                           pyarrow_wrap_data_type, pyarrow_unwrap_data_type)
-
-from pyarrow.compat import frombytes, tobytes, Mapping
+from pyarrow.lib import frombytes, tobytes
 
 
 cdef unsigned char _single_char(s) except 0:
@@ -62,15 +66,20 @@ cdef class ReadOptions:
         If true, column names will be of the form "f0", "f1"...
         If false, column names will be read from the first CSV row
         after `skip_rows`.
+    encoding: str, optional (default 'utf8')
+        The character encoding of the CSV data.  Columns that cannot
+        decode using this encoding can still be read as Binary.
     """
     cdef:
         CCSVReadOptions options
+        public object encoding
 
     # Avoid mistakingly creating attributes
     __slots__ = ()
 
-    def __init__(self, use_threads=None, block_size=None, skip_rows=None,
-                 column_names=None, autogenerate_column_names=None):
+    def __init__(self, *, use_threads=None, block_size=None, skip_rows=None,
+                 column_names=None, autogenerate_column_names=None,
+                 encoding='utf8'):
         self.options = CCSVReadOptions.Defaults()
         if use_threads is not None:
             self.use_threads = use_threads
@@ -82,6 +91,8 @@ cdef class ReadOptions:
             self.column_names = column_names
         if autogenerate_column_names is not None:
             self.autogenerate_column_names= autogenerate_column_names
+        # Python-specific option
+        self.encoding = encoding
 
     @property
     def use_threads(self):
@@ -176,7 +187,7 @@ cdef class ParseOptions:
     """
     __slots__ = ()
 
-    def __init__(self, delimiter=None, quote_char=None, double_quote=None,
+    def __init__(self, *, delimiter=None, quote_char=None, double_quote=None,
                  escape_char=None, newlines_in_values=None,
                  ignore_empty_lines=None):
         self.options = CCSVParseOptions.Defaults()
@@ -296,10 +307,31 @@ cdef class ParseOptions:
         out.options = options
         return out
 
-    def __reduce__(self):
-        return ParseOptions, (self.delimiter, self.quote_char,
-                              self.double_quote, self.escape_char,
-                              self.newlines_in_values, self.ignore_empty_lines)
+    def __getstate__(self):
+        return (self.delimiter, self.quote_char, self.double_quote,
+                self.escape_char, self.newlines_in_values,
+                self.ignore_empty_lines)
+
+    def __setstate__(self, state):
+        (self.delimiter, self.quote_char, self.double_quote,
+         self.escape_char, self.newlines_in_values,
+         self.ignore_empty_lines) = state
+
+
+cdef class _ISO8601:
+    """
+    A special object indicating ISO-8601 parsing.
+    """
+    __slots__ = ()
+
+    def __str__(self):
+        return 'ISO8601'
+
+    def __eq__(self, other):
+        return isinstance(other, _ISO8601)
+
+
+ISO8601 = _ISO8601()
 
 
 cdef class ConvertOptions:
@@ -324,6 +356,11 @@ cdef class ConvertOptions:
     false_values: list, optional
         A sequence of strings that denote false booleans in the data
         (defaults are appropriate in most cases).
+    timestamp_parsers: list, optional
+        A sequence of strptime()-compatible format strings, tried in order
+        when attempting to infer or convert timestamp values (the special
+        value ISO8601() can also be given).  By default, a fast built-in
+        ISO-8601 parser is used.
     strings_can_be_null: bool, optional (default False)
         Whether string / binary columns can have null values.
         If true, then strings in null_values are considered null for
@@ -359,11 +396,11 @@ cdef class ConvertOptions:
     # Avoid mistakingly creating attributes
     __slots__ = ()
 
-    def __init__(self, check_utf8=None, column_types=None, null_values=None,
+    def __init__(self, *, check_utf8=None, column_types=None, null_values=None,
                  true_values=None, false_values=None,
                  strings_can_be_null=None, include_columns=None,
                  include_missing_columns=None, auto_dict_encode=None,
-                 auto_dict_max_cardinality=None):
+                 auto_dict_max_cardinality=None, timestamp_parsers=None):
         self.options = CCSVConvertOptions.Defaults()
         if check_utf8 is not None:
             self.check_utf8 = check_utf8
@@ -385,6 +422,8 @@ cdef class ConvertOptions:
             self.auto_dict_encode = auto_dict_encode
         if auto_dict_max_cardinality is not None:
             self.auto_dict_max_cardinality = auto_dict_max_cardinality
+        if timestamp_parsers is not None:
+            self.timestamp_parsers = timestamp_parsers
 
     @property
     def check_utf8(self):
@@ -526,10 +565,53 @@ cdef class ConvertOptions:
     def include_missing_columns(self, value):
         self.options.include_missing_columns = value
 
+    @property
+    def timestamp_parsers(self):
+        """
+        A sequence of strptime()-compatible format strings, tried in order
+        when attempting to infer or convert timestamp values (the special
+        value ISO8601() can also be given).  By default, a fast built-in
+        ISO-8601 parser is used.
+        """
+        cdef:
+            shared_ptr[CTimestampParser] c_parser
+            c_string kind
 
-cdef _get_reader(input_file, shared_ptr[CInputStream]* out):
+        parsers = []
+        for c_parser in self.options.timestamp_parsers:
+            kind = deref(c_parser).kind()
+            if kind == b'strptime':
+                parsers.append(frombytes(deref(c_parser).format()))
+            else:
+                assert kind == b'iso8601'
+                parsers.append(ISO8601)
+
+        return parsers
+
+    @timestamp_parsers.setter
+    def timestamp_parsers(self, value):
+        cdef:
+            vector[shared_ptr[CTimestampParser]] c_parsers
+
+        for v in value:
+            if isinstance(v, str):
+                c_parsers.push_back(CTimestampParser.MakeStrptime(tobytes(v)))
+            elif v == ISO8601:
+                c_parsers.push_back(CTimestampParser.MakeISO8601())
+            else:
+                raise TypeError("Expected list of str or ISO8601 objects")
+
+        self.options.timestamp_parsers = move(c_parsers)
+
+
+cdef _get_reader(input_file, ReadOptions read_options,
+                 shared_ptr[CInputStream]* out):
     use_memory_map = False
     get_input_stream(input_file, use_memory_map, out)
+    if read_options is not None:
+        out[0] = native_transcoding_input_stream(out[0],
+                                                 read_options.encoding,
+                                                 'utf8')
 
 
 cdef _get_read_options(ReadOptions read_options, CCSVReadOptions* out):
@@ -622,7 +704,7 @@ def read_csv(input_file, read_options=None, parse_options=None,
         shared_ptr[CCSVReader] reader
         shared_ptr[CTable] table
 
-    _get_reader(input_file, &stream)
+    _get_reader(input_file, read_options, &stream)
     _get_read_options(read_options, &c_read_options)
     _get_parse_options(parse_options, &c_parse_options)
     _get_convert_options(convert_options, &c_convert_options)
@@ -673,7 +755,7 @@ def open_csv(input_file, read_options=None, parse_options=None,
         CCSVConvertOptions c_convert_options
         CSVStreamingReader reader
 
-    _get_reader(input_file, &stream)
+    _get_reader(input_file, read_options, &stream)
     _get_read_options(read_options, &c_read_options)
     _get_parse_options(parse_options, &c_parse_options)
     _get_convert_options(convert_options, &c_convert_options)

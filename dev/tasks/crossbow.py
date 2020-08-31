@@ -700,13 +700,23 @@ def get_version(root, **kwargs):
     subprojects, e.g. apache-arrow-js-XXX tags.
     """
     from setuptools_scm.git import parse as parse_git_version
-    from setuptools_scm.version import guess_next_version
 
+    # query the calculated version based on the git tags
     kwargs['describe_command'] = (
         'git describe --dirty --tags --long --match "apache-arrow-[0-9].*"'
     )
     version = parse_git_version(root, **kwargs)
-    return version.format_next_version(guess_next_version)
+
+    # increment the minor version, because there can be patch releases created
+    # from maintenance branches where the tags are unreachable from the
+    # master's HEAD, so the git command above generates 0.17.0.dev300 even if
+    # arrow has a never 0.17.1 patch release
+    pattern = r"^(\d+)\.(\d+)\.(\d+)$"
+    match = re.match(pattern, str(version.tag))
+    major, minor, patch = map(int, match.groups())
+
+    # the bumped version number after 0.17.x will be 0.18.0.dev300
+    return "{}.{}.{}.dev{}".format(major, minor + 1, patch, version.distance)
 
 
 class Serializable:
@@ -733,6 +743,19 @@ class Target(Serializable):
         self.remote = remote
         self.version = version
         self.no_rc_version = re.sub(r'-rc\d+\Z', '', version)
+        # Semantic Versioning 1.0.0: https://semver.org/spec/v1.0.0.html
+        #
+        # > A pre-release version number MAY be denoted by appending an
+        # > arbitrary string immediately following the patch version and a
+        # > dash. The string MUST be comprised of only alphanumerics plus
+        # > dash [0-9A-Za-z-].
+        #
+        # Example:
+        #
+        #   '0.16.1.dev10' ->
+        #   '0.16.1-dev10'
+        self.no_rc_semver_version = \
+            re.sub(r'\.(dev\d+)\Z', r'-\1', self.no_rc_version)
 
     @classmethod
     def from_repo(cls, repo, head=None, branch=None, remote=None, version=None,
@@ -769,11 +792,9 @@ class Task(Serializable):
     submitting the job to a queue.
     """
 
-    def __init__(self, platform, ci, template, artifacts=None, params=None):
-        assert platform in {'win', 'osx', 'linux'}
+    def __init__(self, ci, template, artifacts=None, params=None):
         assert ci in {'circle', 'travis', 'appveyor', 'azure', 'github'}
         self.ci = ci
-        self.platform = platform
         self.template = template
         self.artifacts = artifacts or []
         self.params = params or {}
@@ -1014,7 +1035,8 @@ class Job(Serializable):
         # instantiate the tasks
         tasks = {}
         versions = {'version': target.version,
-                    'no_rc_version': target.no_rc_version}
+                    'no_rc_version': target.no_rc_version,
+                    'no_rc_semver_version': target.no_rc_semver_version}
         for task_name, task in task_definitions.items():
             artifacts = task.pop('artifacts', None) or []  # because of yaml
             artifacts = [fn.format(**versions) for fn in artifacts]
@@ -1435,7 +1457,7 @@ yaml.register_class(Target)
 
 
 # define default paths
-DEFAULT_CONFIG_PATH = CWD / 'tasks.yml'
+DEFAULT_CONFIG_PATH = str(CWD / 'tasks.yml')
 DEFAULT_ARROW_PATH = CWD.parents[1]
 DEFAULT_QUEUE_PATH = CWD.parents[2] / 'crossbow'
 

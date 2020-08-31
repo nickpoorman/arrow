@@ -22,6 +22,8 @@ using Rcpp::wrap;
 
 #if defined(ARROW_R_WITH_ARROW)
 
+#include <arrow/chunked_array.h>
+
 // [[arrow::export]]
 int ChunkedArray__length(const std::shared_ptr<arrow::ChunkedArray>& chunked_array) {
   return chunked_array->length();

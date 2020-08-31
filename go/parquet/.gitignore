@@ -1,0 +1,6 @@
+bin/
+tmp/
+launch.json
+.vscode/
+.debug.tmp.go
+NOTES

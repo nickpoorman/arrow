@@ -18,9 +18,9 @@
 #include "./arrow_types.h"
 #if defined(ARROW_R_WITH_ARROW)
 
-#include <arrow/io/file.h>
-#include <arrow/ipc/reader.h>
-#include <arrow/ipc/writer.h>
+#include <arrow/array/array_base.h>
+#include <arrow/table.h>
+#include <arrow/util/key_value_metadata.h>
 
 using Rcpp::DataFrame;
 
@@ -42,6 +42,14 @@ int Table__num_rows(const std::shared_ptr<arrow::Table>& x) { return x->num_rows
 // [[arrow::export]]
 std::shared_ptr<arrow::Schema> Table__schema(const std::shared_ptr<arrow::Table>& x) {
   return x->schema();
+}
+
+// [[arrow::export]]
+std::shared_ptr<arrow::Table> Table__ReplaceSchemaMetadata(
+    const std::shared_ptr<arrow::Table>& x, Rcpp::CharacterVector metadata) {
+  auto kv = std::shared_ptr<arrow::KeyValueMetadata>(new arrow::KeyValueMetadata(
+      metadata.names(), Rcpp::as<std::vector<std::string>>(metadata)));
+  return x->ReplaceSchemaMetadata(kv);
 }
 
 // [[arrow::export]]
@@ -169,6 +177,8 @@ std::shared_ptr<arrow::Table> Table__from_dots(SEXP lst, SEXP schema_sxp) {
     SEXP names = Rf_getAttrib(lst, R_NamesSymbol);
 
     auto fill_one_column = [&columns, &fields](int j, SEXP x, SEXP name) {
+      // Make sure we're ingesting UTF-8
+      name = Rf_mkCharCE(Rf_translateCharUTF8(name), CE_UTF8);
       if (Rf_inherits(x, "ChunkedArray")) {
         auto chunked_array = arrow::r::extract<arrow::ChunkedArray>(x);
         fields[j] = arrow::field(CHAR(name), chunked_array->type());

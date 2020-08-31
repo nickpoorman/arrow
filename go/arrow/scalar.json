@@ -1,0 +1,189 @@
+[
+    {
+        "T": "Boolean",
+        "CType": "bool",
+        "DefaultDataType": "FixedWidthTypes.Boolean",
+        "SizeBytes": "1",
+        "IsIntegral": true
+    },
+    {
+        "T": "Int8",
+        "CType": "int8",
+        "DefaultDataType": "PrimitiveTypes.Int8",
+        "SizeBytes": "1",
+        "IsIntegral": true
+    },
+    {
+        "T": "Int16",
+        "CType": "int16",
+        "DefaultDataType": "PrimitiveTypes.Int16",
+        "SizeBytes": "2",
+        "IsIntegral": true
+    },
+    {
+        "T": "Int32",
+        "CType": "int32",
+        "DefaultDataType": "PrimitiveTypes.Int32",
+        "SizeBytes": "4",
+        "IsIntegral": true
+    },
+    {
+        "T": "Int64",
+        "CType": "int64",
+        "DefaultDataType": "PrimitiveTypes.Int64",
+        "SizeBytes": "8",
+        "IsIntegral": true
+    },
+    {
+        "T": "Uint8",
+        "CType": "uint8",
+        "DefaultDataType": "PrimitiveTypes.Uint8",
+        "SizeBytes": "1",
+        "IsIntegral": true
+    },
+    {
+        "T": "Uint16",
+        "CType": "uint16",
+        "DefaultDataType": "PrimitiveTypes.Uint16",
+        "SizeBytes": "2",
+        "IsIntegral": true
+    },
+    {
+        "T": "Uint32",
+        "CType": "uint32",
+        "DefaultDataType": "PrimitiveTypes.Uint32",
+        "SizeBytes": "4",
+        "IsIntegral": true
+    },
+    {
+        "T": "Uint64",
+        "CType": "uint64",
+        "DefaultDataType": "PrimitiveTypes.Uint64",
+        "SizeBytes": "8",
+        "IsIntegral": true
+    },
+    {
+        "T": "Float16",
+        "CType": "float16.Num",
+        "DefaultDataType": "FixedWidthTypes.Float16",
+        "SizeBytes": "2"
+    },
+    {
+        "T": "Float32",
+        "CType": "float32",
+        "DefaultDataType": "PrimitiveTypes.Float32",
+        "SizeBytes": "4"
+    },
+    {
+        "T": "Float64",
+        "CType": "float64",
+        "DefaultDataType": "PrimitiveTypes.Float64",
+        "SizeBytes": "8"
+    },
+    {
+        "T": "Binary",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": "BinaryTypes.Binary"
+    },
+    {
+        "T": "String",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": "BinaryTypes.String"
+    },
+    {
+        "T": "LargeBinary",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": "UnsupportedTypes.LargeBinary"
+    },
+    {
+        "T": "LargeString",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": ""
+    },
+    {
+        "T": "FixedSizeBinary",
+        "CType": "*memory.Buffer",
+        "DefaultDataType": "(*FixedSizeBinaryType)(nil)"
+    },
+    {
+        "T": "Date32",
+        "CType": "Date32",
+        "DefaultDataType": "FixedWidthTypes.Date32",
+        "SizeBytes": "4",
+        "IsIntegral": true
+    },
+    {
+        "T": "Date64",
+        "CType": "Date64",
+        "DefaultDataType": "FixedWidthTypes.Date64",
+        "SizeBytes": "8",
+        "IsIntegral": true
+    },
+    {
+        "T": "Time32",
+        "CType": "Time32",
+        "DefaultDataType": "FixedWidthTypes.Time32ms",
+        "SizeBytes": "4",
+        "IsIntegral": true
+    },
+    {
+        "T": "Time64",
+        "CType": "Time64",
+        "DefaultDataType": "FixedWidthTypes.Time64ns",
+        "SizeBytes": "8",
+        "IsIntegral": true
+    },
+    {
+        "T": "Timestamp",
+        "CType": "Timestamp",
+        "DefaultDataType": "FixedWidthTypes.Timestamp_ms",
+        "SizeBytes": "8",
+        "IsIntegral": true
+    },
+    {
+        "T": "MonthInterval",
+        "CType": "MonthInterval",
+        "DefaultDataType": "FixedWidthTypes.MonthInterval",
+        "SizeBytes": "4",
+        "IsIntegral": true
+    },
+    {
+        "T": "DayTimeInterval",
+        "CType": "DayTimeInterval",
+        "DefaultDataType": "FixedWidthTypes.DayTimeInterval",
+        "SizeBytes": "8"
+    },
+    {
+        "T": "Duration",
+        "CType": "Duration",
+        "DefaultDataType": "FixedWidthTypes.Duration_ms",
+        "SizeBytes": "8",
+        "IsIntegral": true
+    },
+    {
+        "T": "Decimal128",
+        "CType": "decimal128.Num",
+        "DefaultDataType": "(*Decimal128Type)(nil)",
+        "SizeBytes": "16"
+    },
+    {
+        "T": "List",
+        "CType": "interface{}",
+        "DefaultDataType": "(*ListType)(nil)"
+    },
+    {
+        "T": "LargeList",
+        "CType": "interface{}",
+        "DefaultDataType": "UnsupportedTypes.LargeList"
+    },
+    {
+        "T": "Map",
+        "CType": "interface{}",
+        "DefaultDataType": "UnsupportedTypes.Map"
+    },
+    {
+        "T": "FixedSizeList",
+        "CType": "interface{}",
+        "DefaultDataType": "(*FixedSizeListType)(nil)"
+    }
+]
